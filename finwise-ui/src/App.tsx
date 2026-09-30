@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { TopNav } from './components/TopNav';
-import { LoginPage } from './components/LoginPage';
 import { OverviewDashboard } from './components/OverviewDashboard';
 import { DocumentUploadModal } from './components/DocumentUploadModal';
 import { ProcessingScreen } from './components/ProcessingScreen';
@@ -9,9 +8,6 @@ import { FinancialAnalysisWorkspace } from './components/FinancialAnalysisWorksp
 import { AnomalyIntelligence } from './components/AnomalyIntelligence';
 import { AnomalyInvestigationModal } from './components/AnomalyInvestigationModal';
 import { ReportComparison } from './components/ReportComparison';
-import { UsersAndAccess } from './components/UsersAndAccess';
-import { AuditLogsView } from './components/AuditLogsView';
-import { LocalSystemDashboard } from './components/LocalSystemDashboard';
 import { SourceEvidenceDrawer } from './components/SourceEvidenceDrawer';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
 
@@ -30,21 +26,16 @@ import {
   financialMetrics,
   sampleSignals,
   askDoxFinPresetQA,
-  comparisonMetricsList,
-  sampleUsers,
-  sampleAuditLogs
+  comparisonMetricsList
 } from './data/doxfinData';
 
 export function App() {
   // Navigation & View State
   const [activeNav, setActiveNav] = useState<string>('overview');
-  const [isLoginPageActive, setIsLoginPageActive] = useState<boolean>(false);
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true);
-  const [currentUser, setCurrentUser] = useState({
+  const currentUser = {
     name: 'Pratham',
-    role: 'Lead Financial Analyst',
-    email: 'pratham@internal.doxfin'
-  });
+    role: 'Lead Financial Analyst'
+  };
 
   // Active Document & Processing Mode
   const [documents, setDocuments] = useState<DocumentInfo[]>(sampleDocuments);
@@ -92,22 +83,6 @@ export function App() {
     setActiveNav('financial_analysis');
   };
 
-  const handleLoginSuccess = (user: { name: string; role: string; email: string }) => {
-    setCurrentUser(user);
-    setIsLoggedIn(true);
-    setIsLoginPageActive(false);
-  };
-
-  // If viewing the dedicated Login screen
-  if (isLoginPageActive) {
-    return (
-      <LoginPage
-        onLoginSuccess={handleLoginSuccess}
-        onBackToApp={() => setIsLoginPageActive(false)}
-      />
-    );
-  }
-
   const unreviewedAnomaliesCount = sampleSignals.filter((s) => s.validationStatus === 'Requires Review').length;
   const activeProcessingCount = documents.filter((d) => d.status === 'processing').length;
 
@@ -120,8 +95,6 @@ export function App() {
         unreviewedAnomaliesCount={unreviewedAnomaliesCount || 3}
         activeProcessingCount={activeProcessingCount}
         currentUser={currentUser}
-        onOpenSettings={() => setActiveNav('system')}
-        onSwitchUser={() => setIsLoginPageActive(true)}
       />
 
       {/* Main Content Area (Offset by Sidebar width 64 = 16rem = 256px) */}
@@ -135,8 +108,6 @@ export function App() {
           onSetProcessingMode={setProcessingMode}
           onOpenUpload={() => setIsUploadModalOpen(true)}
           onOpenSearch={() => setIsSearchModalOpen(true)}
-          onOpenLogin={() => setIsLoginPageActive(true)}
-          isLoggedIn={isLoggedIn}
         />
 
         {/* Dynamic Body Router */}
@@ -157,38 +128,7 @@ export function App() {
             />
           )}
 
-          {/* 2. DOCUMENTS LIBRARY */}
-          {activeNav === 'documents' && (
-            <div className="space-y-6 max-w-7xl mx-auto pb-12">
-              <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div>
-                  <h1 className="text-2xl font-bold text-slate-900 font-['DM_Sans']">Document Catalog</h1>
-                  <p className="text-xs text-slate-500 mt-1">Locally indexed annual reports, statements, and financial PDFs</p>
-                </div>
-                <button
-                  onClick={() => setIsUploadModalOpen(true)}
-                  className="btn btn-primary text-xs font-semibold"
-                >
-                  + Upload New Document
-                </button>
-              </div>
-
-              <OverviewDashboard
-                documents={documents}
-                signals={sampleSignals}
-                onOpenDocument={(doc) => handleOpenDocumentAnalysis(doc, 'overview')}
-                onOpenUpload={() => setIsUploadModalOpen(true)}
-                onOpenAnomalies={() => setActiveNav('anomalies')}
-                onOpenProcessing={(doc) => {
-                  if (doc) setCurrentDocument(doc);
-                  setActiveNav('processing');
-                }}
-                onOpenCompare={() => setActiveNav('compare_reports')}
-              />
-            </div>
-          )}
-
-          {/* 3. FINANCIAL ANALYSIS WORKSPACE */}
+          {/* 2. FINANCIAL ANALYSIS WORKSPACE */}
           {activeNav === 'financial_analysis' && (
             <FinancialAnalysisWorkspace
               document={currentDocument}
@@ -201,7 +141,7 @@ export function App() {
             />
           )}
 
-          {/* 4. ANOMALIES & FINANCIAL SIGNALS */}
+          {/* 3. ANOMALIES & FINANCIAL SIGNALS */}
           {activeNav === 'anomalies' && (
             <AnomalyIntelligence
               signals={sampleSignals}
@@ -209,20 +149,7 @@ export function App() {
             />
           )}
 
-          {/* 5. AI RESEARCH (ASK DOXFIN) */}
-          {activeNav === 'ai_research' && (
-            <FinancialAnalysisWorkspace
-              document={currentDocument}
-              metrics={financialMetrics}
-              signals={sampleSignals}
-              qaPresets={askDoxFinPresetQA}
-              onInspectMetricEvidence={handleInspectMetric}
-              onInvestigateSignal={handleInvestigateSignal}
-              initialSubTab="ask_doxfin"
-            />
-          )}
-
-          {/* 6. COMPARE REPORTS */}
+          {/* 4. COMPARE REPORTS */}
           {activeNav === 'compare_reports' && (
             <ReportComparison
               comparisonMetrics={comparisonMetricsList}
@@ -230,32 +157,13 @@ export function App() {
             />
           )}
 
-          {/* 7. PROCESSING PIPELINE SCREEN */}
+          {/* 5. PROCESSING PIPELINE SCREEN */}
           {activeNav === 'processing' && (
             <ProcessingScreen
               document={currentDocument}
               pipelineStages={pipelineStages}
               hardware={hardware}
               onViewAnalysis={(doc) => handleOpenDocumentAnalysis(doc, 'overview')}
-            />
-          )}
-
-          {/* 8. ENTERPRISE AUDIT LOGS */}
-          {activeNav === 'audit_logs' && (
-            <AuditLogsView logs={sampleAuditLogs} />
-          )}
-
-          {/* 9. USERS & ACCESS */}
-          {activeNav === 'users_access' && (
-            <UsersAndAccess users={sampleUsers} />
-          )}
-
-          {/* 10. LOCAL SYSTEM TELEMETRY */}
-          {activeNav === 'system' && (
-            <LocalSystemDashboard
-              hardware={hardware}
-              processingMode={processingMode}
-              onSetProcessingMode={setProcessingMode}
             />
           )}
         </main>

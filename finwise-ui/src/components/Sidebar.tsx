@@ -1,16 +1,10 @@
 import React from 'react';
 import {
   LayoutDashboard,
-  FileText,
   LineChart,
   AlertTriangle,
-  Sparkles,
   GitCompare,
   Cpu,
-  ShieldCheck,
-  Users,
-  Server,
-  Settings,
   Shield
 } from 'lucide-react';
 
@@ -19,11 +13,7 @@ interface SidebarProps {
   setActiveNav: (nav: string) => void;
   unreviewedAnomaliesCount: number;
   activeProcessingCount: number;
-  onOpenSettings?: () => void;
-  onSwitchUser?: () => void;
   currentUser?: { name: string; role: string };
-  isCollapsed?: boolean;
-  setIsCollapsed?: (collapsed: boolean) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -31,20 +21,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setActiveNav,
   unreviewedAnomaliesCount,
   activeProcessingCount,
-  onOpenSettings,
-  currentUser = { name: 'Pratham', role: 'Lead Financial Analyst' }
+  currentUser = { name: 'Pratham', role: 'Financial Analyst' }
 }) => {
-  const navItems = [
+  const coreNavItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'documents', label: 'Documents', icon: FileText, badge: '6' },
     { id: 'financial_analysis', label: 'Financial Analysis', icon: LineChart },
-    { id: 'anomalies', label: 'Anomalies', icon: AlertTriangle, badge: unreviewedAnomaliesCount > 0 ? String(unreviewedAnomaliesCount) : undefined, badgeColor: 'amber' },
-    { id: 'ai_research', label: 'AI Research', icon: Sparkles, highlight: true },
+    {
+      id: 'anomalies',
+      label: 'Anomalies',
+      icon: AlertTriangle,
+      badge: unreviewedAnomaliesCount > 0 ? String(unreviewedAnomaliesCount) : undefined,
+      badgeColor: 'amber'
+    },
     { id: 'compare_reports', label: 'Compare Reports', icon: GitCompare },
-    { id: 'processing', label: 'Processing', icon: Cpu, badge: activeProcessingCount > 0 ? 'Active' : undefined, badgeColor: 'brand' },
-    { id: 'audit_logs', label: 'Audit Logs', icon: ShieldCheck },
-    { id: 'users_access', label: 'Users & Access', icon: Users },
-    { id: 'system', label: 'System', icon: Server }
+    {
+      id: 'processing',
+      label: 'Processing Pipeline',
+      icon: Cpu,
+      badge: activeProcessingCount > 0 ? 'Active' : undefined,
+      badgeColor: 'brand'
+    }
   ];
 
   return (
@@ -70,9 +66,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Navigation List */}
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
         <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-          Core Workstation
+          Navigation
         </div>
-        {navItems.slice(0, 6).map((item) => {
+        {coreNavItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeNav === item.id;
           return (
@@ -82,7 +78,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md text-sm font-medium transition-all group ${
                 isActive
                   ? 'bg-[#0F3E5D] text-white shadow-sm'
-                  : 'text-slate-650 hover:bg-slate-50 hover:text-slate-900 text-slate-600'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
               }`}
             >
               <div className="flex items-center gap-3">
@@ -100,48 +96,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       ? 'bg-sky-400/20 text-sky-200'
                       : item.badgeColor === 'amber'
                       ? 'bg-amber-100 text-amber-800'
-                      : 'bg-slate-100 text-slate-600'
-                  }`}
-                >
-                  {item.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
-
-        <div className="pt-4 px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-          Telemetry & Governance
-        </div>
-        {navItems.slice(6).map((item) => {
-          const Icon = item.icon;
-          const isActive = activeNav === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => setActiveNav(item.id)}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md text-sm font-medium transition-all group ${
-                isActive
-                  ? 'bg-[#0F3E5D] text-white shadow-sm'
-                  : 'text-slate-650 hover:bg-slate-50 hover:text-slate-900 text-slate-600'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Icon
-                  className={`w-4 h-4 transition-colors ${
-                    isActive ? 'text-sky-300' : 'text-slate-400 group-hover:text-slate-700'
-                  }`}
-                />
-                <span className="truncate">{item.label}</span>
-              </div>
-              {item.badge && (
-                <span
-                  className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                    isActive
-                      ? 'bg-sky-400/20 text-sky-200'
-                      : item.badgeColor === 'brand'
-                      ? 'bg-sky-100 text-sky-800'
-                      : 'bg-slate-100 text-slate-600'
+                      : 'bg-sky-100 text-sky-800'
                   }`}
                 >
                   {item.badge}
@@ -161,9 +116,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <span className="text-slate-700 font-medium">Local Server</span>
+            <span className="text-slate-700 font-medium">Local Engine</span>
           </div>
-          <span className="text-[11px] text-slate-500 font-mono">4 Workers</span>
+          <span className="text-[11px] text-emerald-700 font-mono font-medium">100% Private</span>
         </div>
 
         {/* User Card */}
@@ -177,15 +132,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <p className="text-[11px] text-slate-500 truncate">{currentUser.role}</p>
             </div>
           </div>
-          {onOpenSettings && (
-            <button
-              onClick={onOpenSettings}
-              className="p-1.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-              title="System Settings"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
-          )}
         </div>
       </div>
     </aside>

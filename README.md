@@ -1,8 +1,8 @@
 # Project4
 
-FinWise
+DoxFin
 
-FinWise is a privacy-first, multimodal financial document intelligence platform designed to analyze large financial reports, extract structured information, calculate financial metrics, detect unusual patterns, explain likely causes, and provide evidence-backed answers with source references.
+DoxFin is a privacy-first, multimodal financial document intelligence platform designed to analyze large financial reports, extract structured information, calculate financial metrics, detect unusual patterns, explain likely causes, and provide evidence-backed answers with source references.
 
 Core principle: Python calculates, RAG provides evidence, and the LLM explains.
 
@@ -10,7 +10,7 @@ Core principle: Python calculates, RAG provides evidence, and the LLM explains.
 
 Financial reports can be hundreds of pages long and contain financial statements, tables, notes, management discussion, risk disclosures, charts, graphs, images, earnings information, and segment information.
 
-FinWise aims to convert complex financial documents into structured, searchable, and understandable financial intelligence.
+DoxFin aims to convert complex financial documents into structured, searchable, and understandable financial intelligence.
 
 2. Main Goals
 
@@ -122,7 +122,7 @@ Granite vision/document models
 
 Other suitable multimodal models
 
-FinWise should not run vision processing on every image.
+DoxFin should not run vision processing on every image.
 
 Image / Page
      ↓
@@ -185,7 +185,7 @@ The LLM receives the calculated result instead of performing the calculation its
 
 6. Anomaly Detection
 
-FinWise can detect unusual financial relationships such as:
+DoxFin can detect unusual financial relationships such as:
 
 Revenue increasing while profit decreases
 
@@ -219,7 +219,7 @@ An anomaly should not automatically be treated as fraud or financial failure.
 
 7. RAG Architecture
 
-FinWise should avoid sending an entire 500-page report directly to an LLM.
+DoxFin should avoid sending an entire 500-page report directly to an LLM.
 
 Financial Report
       ↓
@@ -239,7 +239,7 @@ Possible vector technology: FAISS.
 
 8. Hallucination Reduction
 
-FinWise should not use the LLM as the authoritative source of financial numbers.
+DoxFin should not use the LLM as the authoritative source of financial numbers.
 
 PDF
  ↓
@@ -269,7 +269,7 @@ Conflict detected
         ↓
 Human verification required
 
-FinWise should not silently guess.
+DoxFin should not silently guess.
 
 9. Human-in-the-Loop
 
@@ -299,7 +299,7 @@ Actual thresholds should be determined through testing and benchmarking rather t
 
 11. Evidence and Citations
 
-Important FinWise outputs should ideally contain:
+Important DoxFin outputs should ideally contain:
 
 Document name
 
@@ -453,11 +453,11 @@ Large Models
 
 Good for complex charts, dense documents, advanced reasoning, and strong cloud or enterprise GPU infrastructure.
 
-FinWise should use the smallest model that meets benchmarked accuracy requirements.
+DoxFin should use the smallest model that meets benchmarked accuracy requirements.
 
 16. Hardware-Adaptive Processing
 
-FinWise can inspect CPU, RAM, GPU, and VRAM, then select a processing mode.
+DoxFin can inspect CPU, RAM, GPU, and VRAM, then select a processing mode.
 
 Lite Mode
 
@@ -485,13 +485,13 @@ Larger models where justified
 
 Deployment Options
 
-17. FinWise Cloud SaaS
+17. DoxFin Cloud SaaS
 
 User
  ↓
 Browser
  ↓
-FinWise Cloud
+DoxFin Cloud
  ↓
 Cloud CPU / GPU
  ↓
@@ -519,14 +519,14 @@ Increased security responsibility
 
 Sensitive documents leave the customer's infrastructure
 
-18. FinWise Enterprise Local
+18. DoxFin Enterprise Local
 
 Employees
  ↓
 Browser
  ↓
 Company Server
- ├── FinWise
+ ├── DoxFin
  ├── Database
  ├── RAG
  ├── LLM
@@ -550,7 +550,7 @@ Performance depends on customer hardware
 
 Installation and support are more complex
 
-19. FinWise Private Cloud
+19. DoxFin Private Cloud
 
 Company
  ↓
@@ -558,7 +558,7 @@ Company AWS / Azure / GCP environment
  ↓
 Private GPU Instance
  ↓
-FinWise
+DoxFin
 
 Benefits:
 
@@ -570,13 +570,13 @@ Useful for enterprises that do not own physical GPU servers
 
 20. Hybrid Deployment Strategy
 
-                    FINWISE
+                    DOXFIN
                        │
        ┌───────────────┼───────────────┐
        ↓               ↓               ↓
      SaaS          Local Enterprise   Private Cloud
        ↓               ↓               ↓
-FinWise GPU        Customer GPU      Customer Cloud GPU
+DoxFin GPU        Customer GPU      Customer Cloud GPU
 
 Customers can choose based on security, privacy, performance, hardware, cost, and compliance.
 
@@ -594,7 +594,7 @@ Use TLS/HTTPS when information travels between systems.
 
 User
  🔒 HTTPS/TLS
-FinWise Server
+DoxFin Server
 
 23. Encryption at Rest
 
@@ -678,7 +678,7 @@ One tenant must not access another tenant's PDFs, embeddings, analysis, chats, o
 
 29. DPDP Considerations
 
-The Digital Personal Data Protection framework may be relevant when FinWise processes digital personal data relating to identifiable individuals.
+The Digital Personal Data Protection framework may be relevant when DoxFin processes digital personal data relating to identifiable individuals.
 
 Examples may include names, email addresses, employee information, personal identifiers, and certain personal financial information.
 
@@ -686,7 +686,7 @@ Not every financial figure is automatically personal data. Production deployment
 
 30. Optional Blockchain / Integrity Layer
 
-Blockchain is not required for core FinWise security.
+Blockchain is not required for core DoxFin security.
 
 If used, a better use case is document integrity:
 
@@ -815,11 +815,11 @@ Licensing and Business Model
 
 34. Enterprise Licensing
 
-FinWise Enterprise can use cryptographically signed offline licence files.
+DoxFin Enterprise can use cryptographically signed offline licence files.
 
 {
   "customer": "ABC Ltd",
-  "product": "FinWise Enterprise",
+  "product": "DoxFin Enterprise",
   "plan": "enterprise",
   "max_users": 50,
   "expires": "2027-12-31",
@@ -833,28 +833,28 @@ FinWise Enterprise can use cryptographically signed offline licence files.
 
 Flow:
 
-FinWise creates licence
+DoxFin creates licence
        ↓
 Signs with private key
        ↓
 Customer receives licence
        ↓
-FinWise verifies locally
+DoxFin verifies locally
 using public key
 
 35. Monetization Options
 
 SaaS
 
-Customer pays monthly, annual, or usage-based subscription. FinWise pays for infrastructure.
+Customer pays monthly, annual, or usage-based subscription. DoxFin pays for infrastructure.
 
 Enterprise Local
 
-Customer provides GPU, server, and storage. FinWise charges for annual licence, deployment, support, updates, and integrations.
+Customer provides GPU, server, and storage. DoxFin charges for annual licence, deployment, support, updates, and integrations.
 
 Private Cloud
 
-Customer pays cloud infrastructure. FinWise charges for software licence, deployment, support, and maintenance.
+Customer pays cloud infrastructure. DoxFin charges for software licence, deployment, support, and maintenance.
 
 Cost Planning
 
@@ -928,7 +928,7 @@ Benchmarking
 
 38. Required Performance Benchmarks
 
-Test FinWise with:
+Test DoxFin with:
 
 100-page reports
 
@@ -1002,7 +1002,7 @@ Presenting a small prototype budget as full production cost
 
 Proposed Final Architecture
 
-                         FINWISE
+                         DOXFIN
                             │
                       React Frontend
                             │
@@ -1043,13 +1043,13 @@ Proposed Final Architecture
 
 Deployment options:
 
-                       FINWISE
+                       DOXFIN
                           │
           ┌───────────────┼───────────────┐
           ↓               ↓               ↓
        Cloud SaaS     Enterprise Local   Private Cloud
           ↓               ↓               ↓
-   FinWise Cloud GPU  Customer GPU     Customer Cloud GPU
+   DoxFin Cloud GPU  Customer GPU     Customer Cloud GPU
 
 Future Improvements
 
@@ -1085,7 +1085,7 @@ Advanced document-integrity verification
 
 Product Positioning
 
-FinWise is not intended to rely entirely on a single LLM.
+DoxFin is not intended to rely entirely on a single LLM.
 
 Its value comes from combining:
 
@@ -1107,6 +1107,6 @@ The goal is to create a system that is not only capable of reading financial rep
 
 Disclaimer
 
-FinWise should be positioned as a financial research and document-analysis platform, not as a replacement for professional financial, investment, accounting, legal, or compliance advice.
+DoxFin should be positioned as a financial research and document-analysis platform, not as a replacement for professional financial, investment, accounting, legal, or compliance advice.
 
 Automated anomaly detection indicates unusual patterns and should not automatically be interpreted as fraud, wrongdoing, or investment advice.

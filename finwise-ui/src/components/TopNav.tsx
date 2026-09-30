@@ -4,9 +4,7 @@ import {
   UploadCloud,
   ShieldCheck,
   ChevronDown,
-  Building,
-  LogOut,
-  Lock
+  Building
 } from 'lucide-react';
 import type { DocumentInfo, ProcessingMode } from '../types/doxfin';
 
@@ -18,8 +16,6 @@ interface TopNavProps {
   onSetProcessingMode: (mode: ProcessingMode) => void;
   onOpenUpload: () => void;
   onOpenSearch: () => void;
-  onOpenLogin: () => void;
-  isLoggedIn: boolean;
 }
 
 export const TopNav: React.FC<TopNavProps> = ({
@@ -29,15 +25,13 @@ export const TopNav: React.FC<TopNavProps> = ({
   processingMode,
   onSetProcessingMode,
   onOpenUpload,
-  onOpenSearch,
-  onOpenLogin,
-  isLoggedIn
+  onOpenSearch
 }) => {
   const [isDocDropdownOpen, setIsDocDropdownOpen] = React.useState(false);
 
   return (
     <header className="h-16 bg-white border-b border-slate-200 sticky top-0 z-20 flex items-center justify-between px-6 shadow-xs">
-      {/* Left: Active Document Breadcrumb & Selector */}
+      {/* Left: Active Document Selector */}
       <div className="flex items-center gap-3">
         <div className="relative">
           <button
@@ -107,7 +101,7 @@ export const TopNav: React.FC<TopNavProps> = ({
         </div>
       </div>
 
-      {/* Right: Search, Engine Mode, Upload CTA & Login Toggle */}
+      {/* Right: Search, Engine Mode & Upload CTA */}
       <div className="flex items-center gap-3">
         {/* Global Search Button */}
         <button
@@ -115,7 +109,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-50 text-xs transition-colors shadow-xs"
         >
           <Search className="w-3.5 h-3.5 text-slate-400" />
-          <span className="hidden sm:inline">Search metrics, notes, pages...</span>
+          <span className="hidden sm:inline">Search metrics, notes, tables...</span>
           <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono bg-slate-100 text-slate-500 rounded border border-slate-200">
             Ctrl+K
           </kbd>
@@ -141,7 +135,7 @@ export const TopNav: React.FC<TopNavProps> = ({
                 ? 'bg-[#0F3E5D] text-white shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
-            title="Docling + Qwen3-VL Hybrid Engine"
+            title="Docling + Hybrid Extraction"
           >
             Balanced [Auto]
           </button>
@@ -152,7 +146,7 @@ export const TopNav: React.FC<TopNavProps> = ({
                 ? 'bg-white text-slate-900 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
-            title="Full Vision High Precision Ray Cluster"
+            title="Full Multimodal Vision Processing"
           >
             Performance
           </button>
@@ -164,16 +158,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           className="btn btn-primary btn-sm flex items-center gap-1.5 shadow-xs"
         >
           <UploadCloud className="w-3.5 h-3.5" />
-          <span>Upload Document</span>
-        </button>
-
-        {/* Enterprise Login Portal Toggle */}
-        <button
-          onClick={onOpenLogin}
-          className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors"
-          title={isLoggedIn ? "Enterprise Auth (Switch / Log out)" : "Sign In to Local Server"}
-        >
-          {isLoggedIn ? <Lock className="w-4 h-4 text-emerald-600" /> : <LogOut className="w-4 h-4" />}
+          <span>Upload Report</span>
         </button>
       </div>
     </header>
