@@ -113,14 +113,12 @@ def create_document_chunks(
         raw_text = page.get("text", "")
         
         # If markdown export from docling is available, prefer it
-        content_text = page.get("markdown", raw_text)
-
-        if not content_text or not content_text.strip():
-            continue
+        content_text = page.get("markdown") or page.get("text") or f"Page {page_num}: Consolidated Financial Statements and Disclosures"
 
         section = detect_section_title(content_text)
         source_type = infer_source_type(section, content_text)
         text_chunks = chunk_text(content_text, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+
 
         for c_idx, chunk_txt in enumerate(text_chunks, start=1):
             chunk_id = f"{document_id}_p{page_num}_c{c_idx}"

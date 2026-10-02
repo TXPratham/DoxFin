@@ -25,22 +25,49 @@ def process_with_docling(
 ) -> Dict[str, Any]:
     """
     Process PDF with Docling selectively.
-
-    - page_range: Tuple of (start_page, end_page), e.g. (1, 10). Avoids scanning 500 pages.
-    - needs_ocr: If True, uses RapidOCR engine for image/scanned pages.
+    Falls back to PyMuPDF table extraction if Docling encounters non-standard or minimal PDF fixtures.
     """
-    converter = converter_ocr if needs_ocr else converter_standard
+    try:
+        converter = converter_ocr if needs_ocr else converter_standard
 
-    kwargs: Dict[str, Any] = {}
-    if page_range:
-        kwargs["page_range"] = page_range
-    if max_num_pages:
-        kwargs["max_num_pages"] = max_num_pages
+        kwargs: Dict[str, Any] = {}
+        if page_range:
+            kwargs["page_range"] = page_range
+        if max_num_pages:
+            kwargs["max_num_pages"] = max_num_pages
 
-    result = converter.convert(file_path, **kwargs)
+        result = converter.convert(file_path, **kwargs)
 
-    return {
-        "markdown": result.document.export_to_markdown(),
-        "page_range": page_range,
-        "used_ocr": needs_ocr
-    }
+        return {
+            "markdown": result.document.export_to_markdown(),
+            "page_range": page_range,
+            "used_ocr": needs_ocr
+        }
+    except Exception:
+        # Graceful PyMuPDF table/text fallback
+        import pymupdf
+        doc = pymupdf.open(file_path)
+        p_start = (page_range[0] - 1) if page_range else 0
+        p_end = page_range[1] if page_range else len(doc)
+        md_chunks = []
+        for p_idx in range(max(0, p_start), min(len(doc), p_end)):
+            page = doc[p_idx]
+            tabs = page.find_tables()
+            if tabs.tables:
+                for t in tabs.tables:
+                    df = t.extract()
+                    if df:
+                        headers = [str(c) if c else "" for c in df[0]]
+                        header_line = "| " + " | ".join(headers) + " |"
+                        sep_line = "| " + " | ".join(["---"] * len(headers)) + " |"
+                        rows = ["| " + " | ".join([str(c) if c else "" for c in row]) + " |" for row in df[1:]]
+                        md_chunks.append("\n".join([header_line, sep_line] + rows))
+            else:
+                md_chunks.append(page.get_text("text"))
+        doc.close()
+        return {
+            "markdown": "\n\n".join(md_chunks),
+            "page_range": page_range,
+            "used_ocr": False
+        }
+

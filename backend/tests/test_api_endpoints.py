@@ -35,7 +35,7 @@ print(f"\n2. Testing POST /api/v1/documents (Ingesting {test_pdf_path.name})..."
 
 with open(test_pdf_path, "rb") as f:
     upload_res = client.post(
-        "/api/v1/documents",
+        "/api/v1/documents?sync=true",
         files={"file": (test_pdf_path.name, f, "application/pdf")},
         data={"document_id": doc_id}
     )
@@ -45,6 +45,7 @@ print(f"   Response:    {json.dumps(upload_res.json(), indent=2)}")
 assert upload_res.status_code == 200
 assert upload_res.json()["document_id"] == doc_id
 assert upload_res.json()["status"] == "completed"
+
 
 # 3. GET /api/v1/documents/{id}/status
 print(f"\n3. Testing GET /api/v1/documents/{doc_id}/status...")

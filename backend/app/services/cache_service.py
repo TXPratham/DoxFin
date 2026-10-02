@@ -48,18 +48,20 @@ class DocumentCacheManager:
         if not self.state_file.exists():
             initial_state = {
                 "document_id": self.document_id,
+                "progress_percent": 0,
+                "current_stage": "Pending",
                 "created_at": datetime.now().isoformat(),
                 "last_updated": datetime.now().isoformat(),
                 "stages": {
                     "file_validation": "PENDING",
-                    "pymupdf_inspection": "PENDING",
+                    "pymupdf_fast_pass": "PENDING",
                     "page_classification": "PENDING",
-                    "docling_tables": "PENDING",
-                    "qwen_charts": "PENDING",
-                    "normalization_validation": "PENDING",
-                    "financial_engine": "PENDING",
+                    "text_extraction": "PENDING",
+                    "table_extraction": "PENDING",
+                    "chart_analysis": "PENDING",
+                    "financial_calculations": "PENDING",
                     "anomaly_detection": "PENDING",
-                    "vector_indexing": "PENDING"
+                    "rag_indexing": "PENDING"
                 }
             }
             self._save_json(self.state_file, initial_state)
@@ -78,7 +80,21 @@ class DocumentCacheManager:
         state = self._load_json(self.state_file)
         return state if state else {}
 
-    def update_stage_status(self, stage: str, status: str, error_msg: Optional[str] = None) -> None:
+    def update_progress(self, percent: int, current_stage: str) -> None:
+        state = self.get_state()
+        state["progress_percent"] = max(0, min(100, percent))
+        state["current_stage"] = current_stage
+        state["last_updated"] = datetime.now().isoformat()
+        self._save_json(self.state_file, state)
+
+    def update_stage_status(
+        self,
+        stage: str,
+        status: str,
+        error_msg: Optional[str] = None,
+        progress_percent: Optional[int] = None,
+        current_stage: Optional[str] = None
+    ) -> None:
         """
         Status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'SKIPPED'
         """
@@ -88,12 +104,18 @@ class DocumentCacheManager:
 
         state["stages"][stage] = status
         state["last_updated"] = datetime.now().isoformat()
+        if progress_percent is not None:
+            state["progress_percent"] = max(0, min(100, progress_percent))
+        if current_stage is not None:
+            state["current_stage"] = current_stage
+
         if error_msg:
             state[f"error_{stage}"] = error_msg
         elif f"error_{stage}" in state:
             del state[f"error_{stage}"]
 
         self._save_json(self.state_file, state)
+
 
     def is_stage_completed(self, stage: str) -> bool:
         state = self.get_state()
@@ -111,6 +133,30 @@ class DocumentCacheManager:
         target_path = self.doc_cache_dir / filename
         return self._load_json(target_path)
 
+    def save_page_checkpoint(self, stage_key: str, item_data: Dict[str, Any]) -> None:
+        """
+        Phase 29: Incremental page-level checkpoint persistence.
+        Appends or updates single page extraction result so crashes resume from current page.
+        """
+        existing = self.load_stage_data(stage_key) or []
+        page_num = item_data.get("page_number", item_data.get("page"))
+        
+        # Replace existing page entry or append
+        updated = [x for x in existing if x.get("page_number", x.get("page")) != page_num]
+        updated.append(item_data)
+        updated.sort(key=lambda x: x.get("page_number", x.get("page", 0)))
+        
+        filename = STAGE_FILE_MAPPING.get(stage_key, f"{stage_key}.json")
+        target_path = self.doc_cache_dir / filename
+        self._save_json(target_path, updated)
+
+    def get_completed_page_numbers(self, stage_key: str) -> set:
+        """Returns set of already processed page numbers for the given stage."""
+        existing = self.load_stage_data(stage_key)
+        if not existing or not isinstance(existing, list):
+            return set()
+        return {x.get("page_number", x.get("page")) for x in existing if x.get("page_number", x.get("page")) is not None}
+
     def get_cache_summary(self) -> Dict[str, Any]:
         state = self.get_state()
         cached_files = [f.name for f in self.doc_cache_dir.glob("*.json")]
@@ -120,3 +166,4 @@ class DocumentCacheManager:
             "cached_files": cached_files,
             "stages": state.get("stages", {})
         }
+

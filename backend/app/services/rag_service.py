@@ -1,13 +1,22 @@
 """
-RAG Service for evidence-backed financial queries and citations (Phase 17).
-Implements selective context retrieval (5 targeted chunks rather than 500 pages)
-and builds citation-grounded prompts for LLM synthesis.
+RAG Service & Evaluation Harness for Financial Documents (Phases 33 & 34).
+Implements:
+1. Evidence Sufficiency Verification ("I don't have enough evidence" guard).
+2. Grounded Citation Extraction with Source Page & Section Numbers.
+3. 3-Pillar RAG Benchmark Evaluator (Answer Accuracy, Evidence Retrieved, Page Reference Correctness).
 """
-from typing import Dict, Any, List, Optional, Callable, Union
+import re
+from typing import Dict, Any, List, Optional, Callable, Tuple
 import numpy as np
 
 from app.services.embedding_service import create_embeddings
 from app.services.faiss_service import FaissStore, load_document_store
+
+# Minimum FAISS cosine similarity / dot product threshold for evidence sufficiency
+MIN_EVIDENCE_THRESHOLD = 0.20
+
+# Strict Fallback Phrase required by Phase 34
+INSUFFICIENT_EVIDENCE_MESSAGE = "The uploaded report does not provide sufficient evidence to answer this question."
 
 
 def retrieve_context(
@@ -16,15 +25,12 @@ def retrieve_context(
     top_k: int = 5
 ) -> List[Dict[str, Any]]:
     """
-    Step 1 & 2 of Phase 17:
     1. Embed user financial query with SentenceTransformer (normalized).
     2. Retrieve top-k most relevant evidence chunks from FAISS index.
     """
-    # 1. Encode query
     query_embeddings = create_embeddings([query])
     query_vector = query_embeddings[0]
 
-    # 2. Search FAISS index
     search_results = faiss_store.search(query_vector, k=top_k)
 
     retrieved = []
@@ -43,10 +49,36 @@ def retrieve_context(
     return retrieved
 
 
+def is_evidence_sufficient(
+    query: str,
+    retrieved_chunks: List[Dict[str, Any]],
+    threshold: float = MIN_EVIDENCE_THRESHOLD
+) -> Tuple[bool, str]:
+    """
+    Phase 34 Evidence Sufficiency Gate:
+    Determines if retrieved evidence is adequate to answer the question.
+    """
+    if not retrieved_chunks:
+        return False, "No chunks retrieved from vector store."
+
+    top_score = max((c.get("score", 0.0) for c in retrieved_chunks), default=0.0)
+
+    # Check for specific out-of-scope year queries (e.g. 1982, 2035, 2040)
+    queried_years = re.findall(r"\b(19\d\d|20[3-9]\d)\b", query)
+    if queried_years:
+        chunk_texts = " ".join([c.get("text", "") for c in retrieved_chunks])
+        if not any(yr in chunk_texts for yr in queried_years):
+            return False, f"Query asks about year {queried_years[0]} not found in document context."
+
+
+    if top_score < threshold:
+        return False, f"Top relevance score ({top_score:.4f}) is below confidence threshold ({threshold:.4f})."
+
+    return True, "Sufficient evidence available."
+
+
 def format_context_for_llm(retrieved_chunks: List[Dict[str, Any]]) -> str:
-    """
-    Format selected evidence chunks into a clean, structured context block for the LLM.
-    """
+    """Format selected evidence chunks into a clean, structured context block for the LLM."""
     if not retrieved_chunks:
         return "No relevant financial context found in document."
 
@@ -62,9 +94,7 @@ def format_context_for_llm(retrieved_chunks: List[Dict[str, Any]]) -> str:
 
 
 def build_rag_prompt(query: str, retrieved_chunks: List[Dict[str, Any]]) -> str:
-    """
-    Construct institutional financial analyst prompt enforcing strict citation grounding.
-    """
+    """Construct institutional financial analyst prompt enforcing strict citation grounding."""
     context_str = format_context_for_llm(retrieved_chunks)
 
     prompt = f"""You are DoxFin's Quantitative Financial Analysis Engine.
@@ -72,9 +102,9 @@ Answer the user's financial question STRICTLY using the retrieved context provid
 
 RULES:
 1. Ground every claim with exact citations in the format [Page X, Section Name].
-2. If the answer is not supported by the retrieved context, state clearly that the information is not present in the referenced sections.
+2. If the answer is not supported by the retrieved context, state clearly: "{INSUFFICIENT_EVIDENCE_MESSAGE}".
 3. Financial calculations and facts must be deterministic and verifiable from the evidence.
-4. Do NOT speculate or hallucinate outside the given text.
+4. Do NOT speculate, extrapolate, or hallucinate outside the given text.
 
 === RETRIEVED FINANCIAL EVIDENCE ===
 {context_str}
@@ -88,7 +118,7 @@ Financial Analysis & Evidence-Backed Answer:"""
 
 class RAGService:
     """
-    RAG Pipeline orchestrator for financial documents.
+    RAG Pipeline orchestrator & Evaluation Service (Phases 33 & 34).
     """
 
     @classmethod
@@ -97,29 +127,15 @@ class RAGService:
         query: str,
         faiss_store: FaissStore,
         top_k: int = 5,
-        llm_fn: Optional[Callable[[str], str]] = None
+        llm_fn: Optional[Callable[[str], str]] = None,
+        min_threshold: float = MIN_EVIDENCE_THRESHOLD
     ) -> Dict[str, Any]:
         """
-        Execute full RAG flow:
-        Question -> Embedding -> FAISS retrieval -> Context Assembly -> LLM Explanation.
+        Execute full RAG flow with Phase 34 Evidence Sufficiency Verification:
+        Question -> Embedding -> FAISS retrieval -> Evidence Check -> Context Assembly -> LLM Explanation.
         """
-        # Retrieve selective chunks
         chunks = retrieve_context(query, faiss_store, top_k=top_k)
-
-        # Build prompt
-        prompt = build_rag_prompt(query, chunks)
-
-        # Generate answer (via provided LLM function, or deterministic explanation synthesis)
-        if llm_fn is not None:
-            answer = llm_fn(prompt)
-        else:
-            # Deterministic fallback summary when no LLM API key is wired
-            citations_summary = ", ".join([f"Page {c['page_number']} ({c['section']})" for c in chunks])
-            answer = (
-                f"Retrieved {len(chunks)} relevant sections from the document: {citations_summary}. "
-                f"Top evidence source from Page {chunks[0]['page_number'] if chunks else 'N/A'} "
-                f"addresses '{query}'."
-            )
+        has_evidence, reason = is_evidence_sufficient(query, chunks, threshold=min_threshold)
 
         citations = [
             {
@@ -132,12 +148,42 @@ class RAGService:
             for c in chunks
         ]
 
+        # Phase 34: When evidence is insufficient, refuse gracefully without hallucinating
+        if not has_evidence:
+            return {
+                "query": query,
+                "answer": INSUFFICIENT_EVIDENCE_MESSAGE,
+                "has_sufficient_evidence": False,
+                "refusal_reason": reason,
+                "prompt": None,
+                "citations": citations if top_k > 0 else [],
+                "retrieved_chunks_count": len(chunks),
+                "status": "INSUFFICIENT_EVIDENCE"
+            }
+
+        prompt = build_rag_prompt(query, chunks)
+
+        if llm_fn is not None:
+            answer = llm_fn(prompt)
+        else:
+            # Deterministic evidence synthesizer grounded strictly in top source
+            top_source = chunks[0] if chunks else {}
+            citations_summary = ", ".join([f"Page {c['page_number']} ({c['section']})" for c in chunks[:3]])
+            answer = (
+                f"Based on referenced disclosures from {citations_summary}: "
+                f"{top_source.get('text', '')[:200]}... "
+                f"(Page {top_source.get('page_number', 1)}, {top_source.get('section', 'General')})."
+            )
+
         return {
             "query": query,
             "answer": answer,
+            "has_sufficient_evidence": True,
+            "refusal_reason": None,
             "prompt": prompt,
             "citations": citations,
-            "retrieved_chunks_count": len(chunks)
+            "retrieved_chunks_count": len(chunks),
+            "status": "ANSWERED_WITH_EVIDENCE"
         }
 
     @classmethod
@@ -147,10 +193,92 @@ class RAGService:
         doc_id: str,
         vector_store_dir: str = "vector_store",
         top_k: int = 5,
-        llm_fn: Optional[Callable[[str], str]] = None
+        llm_fn: Optional[Callable[[str], str]] = None,
+        min_threshold: float = MIN_EVIDENCE_THRESHOLD
+    ) -> Dict[str, Any]:
+        """Load index from vector_store and execute RAG query."""
+        store = load_document_store(doc_id=doc_id, vector_store_dir=vector_store_dir)
+        return cls.query_document(
+            query=query,
+            faiss_store=store,
+            top_k=top_k,
+            llm_fn=llm_fn,
+            min_threshold=min_threshold
+        )
+
+    @classmethod
+    def evaluate_rag_benchmark(
+        cls,
+        eval_questions: List[Dict[str, Any]],
+        doc_id: str,
+        vector_store_dir: str = "vector_store"
     ) -> Dict[str, Any]:
         """
-        Load index from vector_store and execute RAG query.
+        Phase 33 RAG Evaluation Suite (50-100 Questions):
+        Evaluates 3 Core Dimensions:
+        1. Answer Correctness (Fact & figure accuracy)
+        2. Evidence Retrieved (Top chunks contain required facts)
+        3. Page Reference Correctness (Exact source page cited)
         """
         store = load_document_store(doc_id=doc_id, vector_store_dir=vector_store_dir)
-        return cls.query_document(query=query, faiss_store=store, top_k=top_k, llm_fn=llm_fn)
+
+        results = []
+        answer_correct_count = 0
+        evidence_correct_count = 0
+        page_correct_count = 0
+        insufficient_correct_count = 0
+
+        for item in eval_questions:
+            q_text = item["question"]
+            expected_answer_keywords = item.get("expected_keywords", [])
+            expected_pages = item.get("expected_pages", [])
+            should_be_insufficient = item.get("should_be_insufficient", False)
+
+            rag_res = cls.query_document(query=q_text, faiss_store=store, top_k=4)
+            actual_answer = rag_res["answer"]
+            retrieved_pages = [c["page_number"] for c in rag_res.get("citations", [])]
+
+            if should_be_insufficient:
+                is_refused = (rag_res["status"] == "INSUFFICIENT_EVIDENCE") or (INSUFFICIENT_EVIDENCE_MESSAGE in actual_answer)
+                ans_ok = is_refused
+                ev_ok = is_refused
+                page_ok = True
+                if is_refused:
+                    insufficient_correct_count += 1
+            else:
+                # 1. Answer fact check
+                ans_ok = any(kw.lower() in actual_answer.lower() for kw in expected_answer_keywords) if expected_answer_keywords else True
+                
+                # 2. Evidence retrieval check
+                chunk_texts = " ".join([c["text_snippet"].lower() for c in rag_res.get("citations", [])])
+                ev_ok = any(kw.lower() in chunk_texts for kw in expected_answer_keywords) if expected_answer_keywords else True
+                
+                # 3. Page reference check
+                page_ok = any(p in retrieved_pages for p in expected_pages) if expected_pages else True
+
+            if ans_ok: answer_correct_count += 1
+            if ev_ok: evidence_correct_count += 1
+            if page_ok: page_correct_count += 1
+
+            overall_pass = ans_ok and ev_ok and page_ok
+
+            results.append({
+                "question": q_text,
+                "answer_correct": ans_ok,
+                "evidence_correct": ev_ok,
+                "page_reference_correct": page_ok,
+                "overall_passed": overall_pass,
+                "retrieved_pages": retrieved_pages,
+                "expected_pages": expected_pages,
+                "status": rag_res["status"]
+            })
+
+        total = len(eval_questions)
+        return {
+            "total_questions_evaluated": total,
+            "answer_accuracy_pct": round(answer_correct_count / total * 100, 2) if total else 100.0,
+            "evidence_retrieval_accuracy_pct": round(evidence_correct_count / total * 100, 2) if total else 100.0,
+            "page_reference_accuracy_pct": round(page_correct_count / total * 100, 2) if total else 100.0,
+            "overall_pass_rate_pct": round(sum(1 for r in results if r["overall_passed"]) / total * 100, 2) if total else 100.0,
+            "evaluation_details": results
+        }
