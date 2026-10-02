@@ -1,24 +1,15 @@
 """
-DoxFin Relational Database ORM Models (Phase 24).
-Structured Application Storage for PostgreSQL (FAISS remains separate for vector search).
-
-Phase 24 Core Tier:
-- USER
-- DOCUMENT
-- PAGE
-- PROCESSING_JOB
-- FINANCIAL_METRIC
-- ANOMALY
-
-Phase 24 Extended Tier:
-- DOCUMENT_ACCESS
-- QUERY
-- EVIDENCE
-- AUDIT_LOG
+DoxFin Relational Database ORM Models (Phases 24, 38, 39, 40, 41).
+Enterprise Multi-User Application Storage with:
+- User Identity, Roles (ADMIN, ANALYST, REVIEWER, VIEWER), and Hashed Passwords
+- Document Permissions / ACL (OWNER, READ_ANALYZE, READ_VERIFY, READ, NO_ACCESS)
+- Verified Financial Metrics & Anomaly Auditing
+- Comprehensive Compliance Audit Logs (LOGIN, UPLOAD, QUERY, VERIFY, DELETE, PERMISSION_CHANGE)
 """
 from datetime import datetime
 import uuid
 from typing import List, Optional
+from enum import Enum
 from sqlalchemy import (
     Column,
     String,
@@ -39,48 +30,87 @@ def generate_uuid() -> str:
     return str(uuid.uuid4())
 
 
+class UserRole(str, Enum):
+    ADMIN = "ADMIN"
+    ANALYST = "ANALYST"
+    REVIEWER = "REVIEWER"
+    VIEWER = "VIEWER"
+
+
+class DocumentAccessLevel(str, Enum):
+    OWNER = "OWNER"
+    READ_ANALYZE = "READ_ANALYZE"
+    READ_VERIFY = "READ_VERIFY"
+    READ = "READ"
+    NO_ACCESS = "NO_ACCESS"
+
+
 # ==========================================
 # 1. CORE APPLICATION MODELS
 # ==========================================
 
 class User(Base):
-    """USER: Analyst, auditor, or enterprise user identity."""
+    """USER: Analyst, reviewer, auditor, admin, or enterprise employee identity."""
     __tablename__ = "users"
 
     id = Column(String(64), primary_key=True, default=generate_uuid)
     email = Column(String(255), unique=True, nullable=False, index=True)
     full_name = Column(String(255), nullable=True)
-    role = Column(String(50), default="analyst")
+    hashed_password = Column(String(255), nullable=True)
+    role = Column(String(50), default=UserRole.ANALYST.value)
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    documents = relationship("Document", back_populates="owner", cascade="all, delete-orphan")
+    owned_documents = relationship("Document", back_populates="owner", foreign_keys="Document.user_id", cascade="all, delete-orphan")
+    permissions = relationship("DocumentAccess", back_populates="user", foreign_keys="DocumentAccess.user_id", cascade="all, delete-orphan")
     queries = relationship("QueryRecord", back_populates="user")
     audit_logs = relationship("AuditLog", back_populates="user")
 
 
 class Document(Base):
-    """DOCUMENT: Uploaded financial document metadata and status."""
+    """DOCUMENT: Uploaded financial document metadata, ownership, and processing status."""
     __tablename__ = "documents"
 
     id = Column(String(64), primary_key=True)  # e.g. "doc_123"
-    user_id = Column(String(64), ForeignKey("users.id"), nullable=True)
+    user_id = Column(String(64), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     filename = Column(String(255), nullable=False)
     file_path = Column(String(512), nullable=False)
     file_size_bytes = Column(BigInteger, default=0)
     page_count = Column(Integer, default=0)
     sha256_hash = Column(String(64), index=True, nullable=True)
+    is_confidential = Column(Boolean, default=False)
     status = Column(String(50), default="uploaded")  # 'uploaded', 'processing', 'completed', 'failed'
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    owner = relationship("User", back_populates="documents")
+    owner = relationship("User", back_populates="owned_documents", foreign_keys=[user_id])
+    permissions = relationship("DocumentAccess", back_populates="document", cascade="all, delete-orphan")
     pages = relationship("PageRecord", back_populates="document", cascade="all, delete-orphan")
     processing_jobs = relationship("ProcessingJob", back_populates="document", cascade="all, delete-orphan")
     financial_metrics = relationship("FinancialMetric", back_populates="document", cascade="all, delete-orphan")
     anomalies = relationship("AnomalyRecord", back_populates="document", cascade="all, delete-orphan")
     queries = relationship("QueryRecord", back_populates="document", cascade="all, delete-orphan")
+
+
+class DocumentAccess(Base):
+    """DOCUMENT_ACCESS / PERMISSION: Granular ACL for financial documents (Phase 39)."""
+    __tablename__ = "document_access"
+
+    id = Column(String(64), primary_key=True, default=generate_uuid)
+    document_id = Column(String(64), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    access_level = Column(String(32), default=DocumentAccessLevel.READ.value)  # OWNER, READ_ANALYZE, READ_VERIFY, READ, NO_ACCESS
+    granted_by_user_id = Column(String(64), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    granted_at = Column(DateTime, default=datetime.utcnow)
+
+    document = relationship("Document", back_populates="permissions")
+    user = relationship("User", back_populates="permissions", foreign_keys=[user_id])
+
+    __table_args__ = (
+        Index("idx_doc_user_access", "document_id", "user_id", unique=True),
+    )
 
 
 class PageRecord(Base):
@@ -121,7 +151,6 @@ class ProcessingJob(Base):
     document = relationship("Document", back_populates="processing_jobs")
 
 
-
 class FinancialMetric(Base):
     """FINANCIAL_METRIC: Deterministically validated financial figures and ratios."""
     __tablename__ = "financial_metrics"
@@ -134,7 +163,9 @@ class FinancialMetric(Base):
     currency = Column(String(16), default="INR")
     period = Column(String(32), default="FY2025")
     page_number = Column(Integer, nullable=True)
-    validation_status = Column(String(32), default="verified")  # 'verified', 'flagged'
+    validation_status = Column(String(32), default="verified")  # 'verified', 'flagged', 'pending'
+    verified_by_user_id = Column(String(64), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    verified_at = Column(DateTime, nullable=True)
     source = Column(String(64), default="income_statement")
 
     document = relationship("Document", back_populates="financial_metrics")
@@ -153,21 +184,6 @@ class AnomalyRecord(Base):
     detected_at = Column(DateTime, default=datetime.utcnow)
 
     document = relationship("Document", back_populates="anomalies")
-
-
-# ==========================================
-# 2. EXTENDED AUDIT & ACCESS MODELS
-# ==========================================
-
-class DocumentAccess(Base):
-    """DOCUMENT_ACCESS: Multi-user access control and permissions."""
-    __tablename__ = "document_access"
-
-    id = Column(String(64), primary_key=True, default=generate_uuid)
-    document_id = Column(String(64), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    permission = Column(String(32), default="read")  # 'read', 'write', 'admin'
-    granted_at = Column(DateTime, default=datetime.utcnow)
 
 
 class QueryRecord(Base):
@@ -202,14 +218,19 @@ class EvidenceRecord(Base):
 
 
 class AuditLog(Base):
-    """AUDIT_LOG: Immutable compliance tracking for financial queries and exports."""
+    """AUDIT_LOG: Immutable compliance tracking for financial operations (Phase 40)."""
     __tablename__ = "audit_logs"
 
     id = Column(String(64), primary_key=True, default=generate_uuid)
-    document_id = Column(String(64), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
     user_id = Column(String(64), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    action = Column(String(64), nullable=False)  # 'upload', 'recompute', 'rag_query', 'export'
+    user_email = Column(String(255), nullable=True, index=True)
+    user_name = Column(String(255), nullable=True)
+    action = Column(String(64), nullable=False, index=True)  # 'LOGIN', 'LOGOUT', 'UPLOAD', 'QUERY', 'VERIFY', 'DELETE', 'PERMISSION_CHANGE', 'ACCESS_DENIED'
+    resource_type = Column(String(64), nullable=True)  # 'DOCUMENT', 'METRIC', 'USER', 'SYSTEM'
+    resource_id = Column(String(64), nullable=True, index=True)
+    details = Column(Text, nullable=True)
     ip_address = Column(String(45), nullable=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    status = Column(String(32), default="SUCCESS")  # 'SUCCESS', 'DENIED', 'FAILURE'
 
     user = relationship("User", back_populates="audit_logs")
