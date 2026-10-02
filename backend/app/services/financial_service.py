@@ -1,18 +1,35 @@
-"""Deterministic Financial Calculations & Metric Engine"""
-from typing import Dict, Any, Optional
+def growth(current, previous):
+
+    if previous == 0:
+        return None
+
+    return ((current - previous) / previous) * 100
 
 
-class FinancialService:
-    @staticmethod
-    def calculate_growth(current: float, previous: float) -> Optional[float]:
-        """Calculate year-over-year or period-over-period percentage growth."""
-        if previous == 0:
-            return None
-        return ((current - previous) / abs(previous)) * 100.0
+def net_profit_margin(net_profit, revenue):
 
-    @staticmethod
-    def calculate_margin(numerator: float, revenue: float) -> Optional[float]:
-        """Calculate margin percentage (e.g. Net Margin, Operating Margin)."""
-        if revenue == 0:
-            return None
-        return (numerator / revenue) * 100.0
+    if revenue == 0:
+        return None
+
+    return (net_profit / revenue) * 100
+
+
+def debt_to_equity(debt, equity):
+
+    if equity == 0:
+        return None
+
+    return debt / equity
+
+
+def current_ratio(current_assets, current_liabilities):
+
+    if current_liabilities == 0:
+        return None
+
+    return current_assets / current_liabilities
+
+
+def free_cash_flow(cfo, capex):
+
+    return cfo - capex
