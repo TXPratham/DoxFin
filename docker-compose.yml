@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  doxfin-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: doxfin-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./doxfin.db
+      - ENVIRONMENT=production
+      - DOXFIN_SECRET_KEY=enterprise_secret_doxfin_production
+      - DOXFIN_LICENSE_PATH=/app/backend/licenses/doxfin.lic
+    volumes:
+      - doxfin_data:/app/backend/uploads
+      - doxfin_extracted:/app/backend/extracted
+      - doxfin_vector:/app/backend/vector_store
+      - doxfin_cache:/app/backend/cache
+      - ./licenses:/app/backend/licenses:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  doxfin_data:
+  doxfin_extracted:
+  doxfin_vector:
+  doxfin_cache:

@@ -231,11 +231,11 @@ def get_document_status(
         )
 
     doc = db.query(Document).filter(Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Document or Job '{document_id}' not found.")
+
     cache_manager = DocumentCacheManager(document_id=document_id, base_cache_dir=CACHE_DIR)
     state = cache_manager.get_state()
-
-    if not doc and not state.get("stages"):
-        raise HTTPException(status_code=404, detail=f"Document or Job '{document_id}' not found.")
 
     filename = doc.filename if doc else state.get("document_id", document_id)
     page_count = doc.page_count if doc else 0
@@ -562,6 +562,7 @@ def delete_document(
         cache_dir=str(CACHE_DIR),
         vector_store_dir=str(VECTOR_STORE_DIR)
     )
+    job_manager.remove_job(document_id)
 
     # 2. Delete database records (cascade takes care of relations)
     db.delete(doc)

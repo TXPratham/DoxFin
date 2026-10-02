@@ -235,3 +235,31 @@ class AuditLog(Base):
     status = Column(String(32), default="SUCCESS")  # 'SUCCESS', 'DENIED', 'FAILURE'
 
     user = relationship("User", back_populates="audit_logs")
+
+
+# ==========================================
+# 2. PILOT TELEMETRY & ISSUE TRACKING (Phase 51)
+# ==========================================
+
+class PilotFeedback(Base):
+    """PILOT_FEEDBACK: Issue and telemetry tracking during company pilots (Phase 51)."""
+    __tablename__ = "pilot_feedback"
+
+    id = Column(String(64), primary_key=True, default=generate_uuid)
+    document_id = Column(String(64), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_id = Column(String(64), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    user_email = Column(String(255), nullable=True)
+    
+    # Category: 'EXTRACTION_ERROR', 'WRONG_TABLE', 'INCORRECT_UNITS', 'RAG_MISTAKE', 
+    # 'MISSING_EVIDENCE', 'PROCESSING_CRASH', 'HARDWARE_RAM_GPU', 'UI_PROBLEM', 'GENERAL_FEEDBACK'
+    category = Column(String(64), nullable=False, index=True)
+    severity = Column(String(16), default="MEDIUM")  # 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False)
+    page_number = Column(Integer, nullable=True)
+    expected_value = Column(String(255), nullable=True)
+    actual_value = Column(String(255), nullable=True)
+    status = Column(String(32), default="OPEN")  # 'OPEN', 'INVESTIGATING', 'RESOLVED', 'WONT_FIX'
+    resolution_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+

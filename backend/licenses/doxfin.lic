@@ -1,0 +1,15 @@
+{
+    "customer": "ABC Ltd",
+    "product": "DoxFin",
+    "max_users": 50,
+    "expires": "2027-12-31",
+    "features": [
+        "rag",
+        "vision",
+        "financial_analysis",
+        "table_extraction",
+        "anomalies",
+        "export"
+    ],
+    "signature": "e93031d8afa9b7379a889c6181f061285620529c0a13a71d25cbbcca277496ad"
+}

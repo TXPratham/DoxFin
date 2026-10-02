@@ -18,6 +18,8 @@ from app.services.auth_service import AuthService
 from app.api.documents import router as documents_router, get_document_status
 from app.api.auth import router as auth_router
 from app.api.audit import router as audit_router
+from app.api.enterprise import router as enterprise_router
+
 
 app = FastAPI(
     title="DoxFin Enterprise API",
@@ -48,8 +50,10 @@ def on_startup():
 
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication & RBAC"])
 app.include_router(audit_router, prefix="/api/v1/audit-logs", tags=["Audit & Compliance"])
+app.include_router(enterprise_router, prefix="/api/v1", tags=["Enterprise & Pilot"])
 app.include_router(documents_router, prefix="/api/v1/documents", tags=["Documents"])
 app.include_router(documents_router, prefix="/documents", include_in_schema=False)
+
 
 
 @app.get("/api/v1/jobs/{job_id}", tags=["Jobs"], summary="Get processing status by job_id")

@@ -126,7 +126,14 @@ class ProcessingJobManager:
             daemon=True
         )
         worker_thread.start()
-        return j_id
+    def remove_job(self, document_id: str):
+        """Purges job from in-memory tracking when document is deleted."""
+        with self._lock:
+            job_id = self._doc_to_job.pop(document_id, None)
+            if job_id and job_id in self._jobs:
+                del self._jobs[job_id]
+            if document_id in self._jobs:
+                del self._jobs[document_id]
 
     def _update_stage(self, job_id: str, stage_key: str, pct: int, label: str, status: str):
         with self._lock:
