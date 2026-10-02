@@ -1,14 +1,45 @@
-"""Document Page Classification and Routing Service"""
-from typing import Dict, Any
+FINANCIAL_KEYWORDS = [
+    "revenue",
+    "profit",
+    "loss",
+    "balance sheet",
+    "cash flow",
+    "financial statements",
+    "assets",
+    "liabilities",
+    "equity",
+    "borrowings",
+    "debt",
+    "receivables",
+    "expenses",
+    "ebitda",
+    "segment",
+    "operating margin"
+]
 
 
-class ClassifierService:
-    @staticmethod
-    def classify_page(page_data: Dict[str, Any]) -> str:
-        """
-        Classifies page content into Text, Table, Chart/Image, or Mixed.
-        """
-        text = page_data.get("text", "")
-        if "Balance Sheet" in text or "Income Statement" in text or "Cash Flows" in text:
-            return "financial_table"
-        return "text"
+def classify_page(page):
+
+    text = page["text"].lower()
+
+    keyword_score = sum(
+        1 for keyword in FINANCIAL_KEYWORDS
+        if keyword in text
+    )
+
+    return {
+        **page,
+
+        "financial_score": keyword_score,
+
+        "use_docling":
+            page["table_count"] > 0
+            or keyword_score >= 3,
+
+        "use_vision":
+            page["image_count"] > 0
+            and keyword_score >= 2,
+
+        "use_ocr":
+            page["needs_ocr"]
+    }

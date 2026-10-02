@@ -1,23 +1,35 @@
-"""PyMuPDF Service for fast PDF text extraction and page routing"""
-import fitz  # PyMuPDF
-from typing import List, Dict, Any
+import os
+
+try:
+    import pymupdf
+except ImportError:
+    import fitz as pymupdf
 
 
-class PyMuPDFService:
-    @staticmethod
-    def extract_text(pdf_path: str) -> List[Dict[str, Any]]:
-        """
-        Extract text page by page with metadata using PyMuPDF.
-        """
-        doc = fitz.open(pdf_path)
+def inspect_pdf(pdf_path: str):
+    if not os.path.exists(pdf_path):
+        raise FileNotFoundError(f"PDF file not found at path: '{pdf_path}'")
+
+    with pymupdf.open(pdf_path) as doc:
         pages = []
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            text = page.get_text()
+
+        for index, page in enumerate(doc):
+            text = page.get_text("text")
+            images = page.get_images(full=True)
+            tables = page.find_tables()
+
             pages.append({
-                "page_number": page_num + 1,
+                "page_number": index + 1,
                 "text": text,
-                "has_text": len(text.strip()) > 0,
+                "text_length": len(text),
+                "image_count": len(images),
+                "table_count": len(tables.tables) if tables and hasattr(tables, "tables") and tables.tables else 0,
+                "needs_ocr": len(text.strip()) < 50
             })
-        doc.close()
-        return pages
+
+        result = {
+            "page_count": doc.page_count,
+            "pages": pages
+        }
+
+    return result
