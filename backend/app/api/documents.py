@@ -11,7 +11,8 @@ import shutil
 import uuid
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Form, Query, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database.database import get_db
@@ -20,9 +21,11 @@ from app.services.pipeline_service import DoxFin500PagePipeline
 from app.services.cache_service import DocumentCacheManager
 from app.services.rag_service import RAGService
 from app.services.db_service import DatabaseSyncService
+from app.workers.job_manager import job_manager
 from app.schemas import (
     DocumentUploadResponse,
     DocumentStatusResponse,
+    StageDetailItem,
     DocumentMetricsResponse,
     MetricItem,
     DocumentAnomaliesResponse,
@@ -50,15 +53,43 @@ pipeline = DoxFin500PagePipeline(
 )
 
 
-@router.post("", response_model=DocumentUploadResponse, summary="Upload and process a financial PDF")
-@router.post("/", response_model=DocumentUploadResponse, include_in_schema=False)
+def _format_stage_details(stages: Dict[str, str], page_count: int = 0) -> List[StageDetailItem]:
+    """Generates user-friendly checklist items for progress visualization."""
+    stage_definitions = [
+        ("file_validation", "File validated"),
+        ("pymupdf_fast_pass", f"{page_count or '500'} pages detected" if stages.get("pymupdf_fast_pass") == "COMPLETED" else "Detecting pages"),
+        ("page_classification", "Page classification"),
+        ("text_extraction", "Text extraction"),
+        ("table_extraction", "Table extraction"),
+        ("chart_analysis", "Chart analysis"),
+        ("financial_calculations", "Financial calculations"),
+        ("anomaly_detection", "Anomaly detection"),
+        ("rag_indexing", "RAG indexing")
+    ]
+
+    details = []
+    for key, label in stage_definitions:
+        status_val = stages.get(key, "PENDING")
+        details.append(StageDetailItem(
+            key=key,
+            label=label,
+            status=status_val
+        ))
+    return details
+
+
+@router.post("", response_model=DocumentUploadResponse, status_code=status.HTTP_202_ACCEPTED, summary="Upload and process a financial PDF (Async HTTP 202)")
+@router.post("/", response_model=DocumentUploadResponse, status_code=status.HTTP_202_ACCEPTED, include_in_schema=False)
 async def upload_document(
     file: UploadFile = File(...),
     document_id: Optional[str] = Form(None),
+    sync: bool = Query(default=False, description="Set True for blocking synchronous execution (testing)"),
     db: Session = Depends(get_db)
 ):
     """
-    Upload an enterprise financial PDF (e.g. 500 pages) and execute the selective processing pipeline.
+    Upload an enterprise financial PDF (e.g. 500 pages).
+    Returns HTTP 202 Accepted immediately with document_id and job_id.
+    Processing continues asynchronously in background workers with live checkpoint tracking.
     """
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF documents are supported.")
@@ -71,54 +102,117 @@ async def upload_document(
     with open(saved_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    try:
-        # Run optimized pipeline
-        result = pipeline.process_document(
-            pdf_path=str(saved_path),
-            document_id=doc_id
-        )
+    job_id = f"job_{uuid.uuid4().hex[:8]}"
 
-        # Sync to PostgreSQL
-        DatabaseSyncService.sync_pipeline_results(db, result)
+    if sync:
+        # Blocking synchronous execution mode
+        try:
+            result = pipeline.process_document(
+                pdf_path=str(saved_path),
+                document_id=doc_id
+            )
+            DatabaseSyncService.sync_pipeline_results(db, result)
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={
+                    "document_id": doc_id,
+                    "job_id": job_id,
+                    "filename": file.filename,
+                    "status": "completed",
+                    "page_count": result.get("page_count", 0),
+                    "message": "Document parsed and indexed synchronously."
+                }
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Synchronous processing failed: {str(e)}")
 
-        return DocumentUploadResponse(
-            document_id=doc_id,
-            filename=file.filename,
-            status="completed",
-            page_count=result.get("page_count", 0),
-            message="Document parsed, metrics computed, and indexed into FAISS successfully."
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Pipeline processing failed: {str(e)}")
+    # Asynchronous non-blocking execution mode (Phase 28 standard)
+    job_manager.submit_job(
+        document_id=doc_id,
+        filename=file.filename,
+        file_path=str(saved_path),
+        job_id=job_id
+    )
+
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={
+            "document_id": doc_id,
+            "job_id": job_id,
+            "filename": file.filename,
+            "status": "processing",
+            "page_count": None,
+            "message": "Document accepted for asynchronous processing. Track progress via /status endpoint."
+        }
+    )
 
 
-@router.get("/{document_id}/status", response_model=DocumentStatusResponse, summary="Get processing status and stage checkpoints")
+@router.get("/{document_id}/status", response_model=DocumentStatusResponse, summary="Get processing status, progress percentage, and stage checkpoints")
 def get_document_status(
     document_id: str,
     db: Session = Depends(get_db)
 ):
     """
-    Check document ingestion status and stage-by-stage progress (PyMuPDF, Docling, Qwen, FAISS).
+    Check document ingestion status, progress percentage (e.g. 63%), and checklist checkpoints.
     """
+    # Check live job manager status first
+    live_status = job_manager.get_status(document_id)
+    if live_status:
+        stages = live_status.get("stages", {})
+        page_count = live_status.get("page_count", 0)
+        return DocumentStatusResponse(
+            document_id=live_status.get("document_id", document_id),
+            job_id=live_status.get("job_id"),
+            filename=live_status.get("filename", f"{document_id}.pdf"),
+            status=live_status.get("status", "processing"),
+            progress_percent=live_status.get("progress_percent", 0),
+            current_stage=live_status.get("current_stage", "Pending"),
+            page_count=page_count,
+            stages=stages,
+            stage_details=_format_stage_details(stages, page_count),
+            last_updated=live_status.get("last_updated")
+        )
+
+    # Fallback to database and cache
     doc = db.query(Document).filter(Document.id == document_id).first()
     cache_manager = DocumentCacheManager(document_id=document_id, base_cache_dir=CACHE_DIR)
     state = cache_manager.get_state()
 
     if not doc and not state.get("stages"):
-        raise HTTPException(status_code=404, detail=f"Document '{document_id}' not found.")
+        raise HTTPException(status_code=404, detail=f"Document or Job '{document_id}' not found.")
 
     filename = doc.filename if doc else state.get("document_id", document_id)
     page_count = doc.page_count if doc else 0
-    status = doc.status if doc else "in_progress"
+    status_str = doc.status if doc else "in_progress"
+    stages = state.get("stages", {})
+    progress_pct = state.get("progress_percent", 100 if status_str == "completed" else 50)
+    current_st = state.get("current_stage", "Completed" if status_str == "completed" else "Processing")
 
     return DocumentStatusResponse(
         document_id=document_id,
+        job_id=f"job_{document_id}",
         filename=filename,
-        status=status,
+        status=status_str,
+        progress_percent=progress_pct,
+        current_stage=current_st,
         page_count=page_count,
-        stages=state.get("stages", {}),
+        stages=stages,
+        stage_details=_format_stage_details(stages, page_count),
         last_updated=state.get("last_updated")
     )
+
+
+@router.get("/jobs/{job_id}", response_model=DocumentStatusResponse, summary="Get processing status by job_id")
+def get_job_status(
+    job_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Check processing status and checkpoint checklist by job_id.
+    """
+    return get_document_status(document_id=job_id, db=db)
+
+
 
 
 @router.get("/{document_id}/metrics", response_model=DocumentMetricsResponse, summary="Get verified deterministic financial metrics")
