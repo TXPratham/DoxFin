@@ -1,0 +1,30 @@
+[
+  {
+    "chunk_id": "doc_123_chunk_0",
+    "document_id": "doc_123",
+    "page_number": 1,
+    "page_type": "text",
+    "text": "The company reported total consolidated revenue of $4.85 billion in FY2024, representing a 14.2% YoY growth."
+  },
+  {
+    "chunk_id": "doc_123_chunk_1",
+    "document_id": "doc_123",
+    "page_number": 2,
+    "page_type": "financial_statement",
+    "text": "Operating margin improved from 18.5% to 21.3%, driven by operational efficiency and reduced SG&A expenses."
+  },
+  {
+    "chunk_id": "doc_123_chunk_2",
+    "document_id": "doc_123",
+    "page_number": 3,
+    "page_type": "financial_statement",
+    "text": "Free Cash Flow stood at $820 million, enabling share repurchases of $300 million and dividend payouts."
+  },
+  {
+    "chunk_id": "doc_123_chunk_3",
+    "document_id": "doc_123",
+    "page_number": 4,
+    "page_type": "notes",
+    "text": "Long-term debt maturities: $250 million due in 2026, with an average effective interest rate of 4.15%."
+  }
+]
