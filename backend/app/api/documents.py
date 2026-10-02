@@ -343,6 +343,7 @@ def verify_financial_metric(
         db=db,
         action="VERIFY",
         user=current_user,
+        document_id=document_id,
         resource_type="METRIC",
         resource_id=f"{document_id}:{metric.metric_name}",
         details={"metric": metric.metric_name, "value": metric.value, "status": payload.status, "note": payload.note},
