@@ -1,25 +1,26 @@
 """
 DoxFin Enterprise Security Hardening Module (Phase 41).
-Includes:
-- Magic bytes file type validation (strict PDF verification)
+Pure Python zero-dependency cryptographic token & security implementation:
+- Magic bytes file type validation (strict PDF header check)
 - File size, page count, and decompression bomb guards
-- Password hashing (Argon2 / SHA-256 with dynamic salt)
-- JWT access token creation and decoding
-- Rate limiting helper for multi-tenant LAN traffic
-- PDF sanitization (strips malicious JavaScript/launch actions)
+- Password hashing (SHA-256 with 16-byte cryptographic salt)
+- RFC 7519 compliant JWT HS256 token creation & decoding (Standard library)
+- Sliding-window LAN rate limiting
+- PDF sanitization (strips malicious JavaScript and embedded launch actions)
 - Secure deletion of document artifacts, FAISS indices, cache, and DB records
 """
 import os
 import re
 import io
 import time
+import json
+import base64
 import shutil
 import hashlib
 import hmac
 import secrets
 from pathlib import Path
 from typing import Optional, Tuple, Dict, Any, List
-import jwt
 import fitz  # PyMuPDF
 
 # Security Configuration Constants
@@ -27,13 +28,22 @@ JWT_SECRET_KEY = os.getenv("DOXFIN_JWT_SECRET", "doxfin_enterprise_secret_key_ch
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_MINUTES = 60 * 24  # 24 hours
 
-# Limits for Enterprise Multi-User LAN
 MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024  # 500 MB
 MAX_PAGE_COUNT_LIMIT = 1000  # Up to 1000 pages for large annual reports
-DEFAULT_PROCESSING_TIMEOUT_SEC = 600  # 10 minutes max per pipeline run
+DEFAULT_PROCESSING_TIMEOUT_SEC = 600
 
-# Rate Limiting configuration
 RATE_LIMIT_REQUESTS_PER_MINUTE = 120
+
+
+def _b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("utf-8").rstrip("=")
+
+
+def _b64url_decode(s: str) -> bytes:
+    pad = len(s) % 4
+    if pad:
+        s += "=" * (4 - pad)
+    return base64.urlsafe_b64decode(s.encode("utf-8"))
 
 
 class SecurityService:
@@ -119,13 +129,12 @@ class SecurityService:
         out_file = output_path or input_path
         doc = fitz.open(input_path)
         
-        # PyMuPDF garbage collection and sanitization clean pass
         doc.scrub(
             attached_files=True,
             clean_pages=True,
             embedded_files=True,
             javascript=True,
-            links=False,  # Keep benign internal page links
+            links=False,
             reset_fields=False,
             thumbnails=True,
             xml_metadata=True
@@ -167,23 +176,50 @@ class SecurityService:
     @staticmethod
     def create_jwt_token(data: Dict[str, Any], expires_minutes: int = JWT_EXPIRATION_MINUTES) -> str:
         """
-        Generates a signed JWT Bearer token with expiration.
+        Generates an RFC 7519 compliant signed JWT HS256 Bearer token.
         """
-        to_encode = data.copy()
-        expire = time.time() + (expires_minutes * 60)
-        to_encode.update({"exp": expire, "iat": time.time()})
-        token = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-        return token
+        header = {"alg": "HS256", "typ": "JWT"}
+        payload = data.copy()
+        payload.update({
+            "exp": int(time.time()) + (expires_minutes * 60),
+            "iat": int(time.time())
+        })
+
+        header_b64 = _b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
+        payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+        signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
+
+        signature = hmac.new(JWT_SECRET_KEY.encode("utf-8"), signing_input, hashlib.sha256).digest()
+        sig_b64 = _b64url_encode(signature)
+
+        return f"{header_b64}.{payload_b64}.{sig_b64}"
 
     @staticmethod
     def decode_jwt_token(token: str) -> Optional[Dict[str, Any]]:
         """
-        Decodes and verifies a JWT Bearer token.
+        Decodes and verifies an RFC 7519 JWT HS256 Bearer token.
         """
         try:
-            payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+            parts = token.split(".")
+            if len(parts) != 3:
+                return None
+            header_b64, payload_b64, sig_b64 = parts
+            signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
+
+            expected_sig = hmac.new(JWT_SECRET_KEY.encode("utf-8"), signing_input, hashlib.sha256).digest()
+            expected_sig_b64 = _b64url_encode(expected_sig)
+
+            if not hmac.compare_digest(sig_b64, expected_sig_b64):
+                return None
+
+            payload_bytes = _b64url_decode(payload_b64)
+            payload = json.loads(payload_bytes.decode("utf-8"))
+
+            if "exp" in payload and payload["exp"] < time.time():
+                return None  # Expired
+
             return payload
-        except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        except Exception:
             return None
 
     @staticmethod
@@ -248,7 +284,6 @@ class RateLimiter:
     def is_allowed(self, client_id: str) -> bool:
         now = time.time()
         timestamps = self.requests.get(client_id, [])
-        # Filter timestamps within active window
         valid_timestamps = [t for t in timestamps if now - t < self.window_sec]
         if len(valid_timestamps) >= self.max_requests:
             self.requests[client_id] = valid_timestamps

@@ -223,6 +223,7 @@ class AuditLog(Base):
 
     id = Column(String(64), primary_key=True, default=generate_uuid)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    document_id = Column(String(64), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True)
     user_id = Column(String(64), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     user_email = Column(String(255), nullable=True, index=True)
     user_name = Column(String(255), nullable=True)
