@@ -1,6 +1,6 @@
 """Validation & Normalization Service for Extracted Financial Figures."""
 import re
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional, Tuple, Union
 
 
 def parse_numeric_value(val_str: Union[str, float, int]) -> Optional[float]:
