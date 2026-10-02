@@ -112,8 +112,51 @@ class HardwareService:
         - Qwen2.5-VL-7B (bfloat16 / fp16)
         - High-throughput parallel Docling + full visual extraction
         """
+    _current_mode: Optional[str] = None
+
+    @classmethod
+    def set_execution_mode(cls, mode: str) -> Dict[str, Any]:
+        """Sets an active execution mode override (LITE, BALANCED, PERFORMANCE, or AUTO to reset)."""
+        mode_upper = mode.upper()
+        if mode_upper == "AUTO":
+            cls._current_mode = None
+        elif mode_upper in ("LITE", "BALANCED", "PERFORMANCE"):
+            cls._current_mode = mode_upper
+        else:
+            raise ValueError(f"Invalid execution mode '{mode}'. Choose AUTO, LITE, BALANCED, or PERFORMANCE.")
+        return cls.get_execution_mode_config()
+
+    @classmethod
+    def get_current_mode(cls) -> str:
+        """Returns the active mode (explicit override or hardware-recommended)."""
+        if cls._current_mode:
+            return cls._current_mode
         profile = cls.get_hardware_profile()
-        mode = (override_mode or profile["recommended_tier"]).upper()
+        return profile["recommended_tier"]
+
+    @classmethod
+    def get_execution_mode_config(cls, override_mode: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Phase 37 Benchmark-Tuned Execution Modes:
+        Thresholds configured from real 500-page pipeline benchmarks:
+
+        LITE:
+        - 1-2 workers, small batches (5 pages)
+        - Qwen2.5-VL-3B (4-bit or CPU)
+        - Selective Docling, low memory limit (4 GB)
+
+        BALANCED (Recommended for ASUS A15 / 16GB laptops):
+        - 2-4 workers, moderate batches (10-20 pages)
+        - Qwen2.5-VL-7B (4-bit quantized)
+        - Selective Docling + RapidOCR, 8 GB memory limit
+
+        PERFORMANCE (Workstations / Server GPUs):
+        - 4-8 workers, large batches (50 pages)
+        - Qwen2.5-VL-7B (bfloat16 / fp16)
+        - High-throughput parallel Docling + full visual extraction
+        """
+        profile = cls.get_hardware_profile()
+        mode = (override_mode or cls._current_mode or profile["recommended_tier"]).upper()
 
         configs = {
             "LITE": {
@@ -127,7 +170,7 @@ class HardwareService:
                 "chunk_size": 400,
                 "chunk_overlap": 80,
                 "rag_top_k": 3,
-                "description": "Optimized for lightweight memory usage and CPU/low-VRAM devices."
+                "description": "Optimized for lightweight memory usage and 4GB VRAM (ASUS A15 RTX 3050/CPU)."
             },
             "BALANCED": {
                 "mode": "BALANCED",
@@ -140,7 +183,7 @@ class HardwareService:
                 "chunk_size": 500,
                 "chunk_overlap": 100,
                 "rag_top_k": 5,
-                "description": "Balanced high-accuracy processing for modern developer laptops."
+                "description": "Balanced high-accuracy processing for modern developer laptops (6GB-12GB VRAM)."
             },
             "PERFORMANCE": {
                 "mode": "PERFORMANCE",
@@ -153,17 +196,23 @@ class HardwareService:
                 "chunk_size": 600,
                 "chunk_overlap": 120,
                 "rag_top_k": 8,
-                "description": "Maximum throughput for dedicated enterprise GPU servers."
+                "description": "Maximum throughput for dedicated enterprise GPU servers (16GB+ VRAM)."
             }
         }
 
         selected_config = configs.get(mode, configs["BALANCED"])
         return {
             **selected_config,
+            "is_auto_managed": cls._current_mode is None,
             "hardware_detected": {
                 "ram_total_gb": profile["ram_total_gb"],
+                "ram_available_gb": profile["ram_available_gb"],
                 "cpu_cores": profile["cpu_logical"],
+                "cpu_physical": profile["cpu_physical"],
                 "gpu_name": profile["gpu"]["name"] if profile["gpu"]["available"] else "CPU Only",
-                "vram_gb": profile["gpu"]["total_vram_gb"] if profile["gpu"]["available"] else 0.0
-            }
+                "vram_gb": profile["gpu"]["total_vram_gb"] if profile["gpu"]["available"] else 0.0,
+                "gpu_available": profile["gpu"]["available"]
+            },
+            "recommended_model": profile["recommended_model"],
+            "recommended_tier": profile["recommended_tier"]
         }

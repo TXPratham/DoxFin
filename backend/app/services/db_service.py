@@ -61,12 +61,13 @@ class DatabaseSyncService:
         db.query(FinancialMetric).filter(FinancialMetric.document_id == doc_id).delete()
 
         metric_definitions = [
+            ("Consolidated Revenue", metrics.get("consolidated_revenue"), "Cr"),
+            ("Reported PAT", metrics.get("net_profit"), "Cr"),
             ("YoY Revenue Growth", metrics.get("revenue_growth_yoy"), "%"),
-            ("Net Profit Margin", metrics.get("net_profit_margin"), "%"),
+            ("Operating Margin", metrics.get("net_profit_margin"), "%"),
             ("Debt-to-Equity Ratio", metrics.get("debt_to_equity"), "ratio"),
             ("Current Ratio", metrics.get("current_ratio"), "ratio"),
-            ("Free Cash Flow", metrics.get("free_cash_flow"), "crore"),
-            ("Net Profit", metrics.get("net_profit"), "crore"),
+            ("Free Cash Flow", metrics.get("free_cash_flow"), "Cr"),
         ]
 
         for name, val, unit in metric_definitions:

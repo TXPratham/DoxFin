@@ -67,3 +67,8 @@ Thumbs.db
 *.swp
 *.swo
 .agents/
+
+# AI Models (Local weight binaries - excluded from Git)
+models/*
+!models/.gitkeep
+

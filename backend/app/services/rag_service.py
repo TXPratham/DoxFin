@@ -156,8 +156,8 @@ class RAGService:
                 "has_sufficient_evidence": False,
                 "refusal_reason": reason,
                 "prompt": None,
-                "citations": citations if top_k > 0 else [],
-                "retrieved_chunks_count": len(chunks),
+                "citations": [],
+                "retrieved_chunks_count": 0,
                 "status": "INSUFFICIENT_EVIDENCE"
             }
 

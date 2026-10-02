@@ -22,6 +22,72 @@ from app.services.financial_service import (
 )
 
 
+import re
+
+def extract_financial_inputs_from_document(
+    classified_pages: List[Dict[str, Any]],
+    tables_data: List[Dict[str, Any]]
+) -> Dict[str, float]:
+    """
+    Deterministically extracts verified financial figures from extracted pages & tables.
+    Returns empty dict if no financial disclosures are found.
+    """
+    all_text = ""
+    for p in classified_pages:
+        all_text += " " + p.get("text", "")
+    for t in tables_data:
+        all_text += " " + t.get("markdown", "")
+
+    all_text_lower = all_text.lower()
+    
+    financial_keywords = ["revenue", "turnover", "sales", "profit", "ebitda", "pat", "balance sheet", "cash flow", "assets", "liabilities"]
+    if not any(k in all_text_lower for k in financial_keywords):
+        return {}
+
+    extracted = {}
+
+    patterns = {
+        "revenue_current": [
+            r"(?:revenue(?:\s+from\s+operations)?|total\s+revenue|turnover|sales)[\s:\-=|]+(?:₹|\$|inr|usd)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
+            r"(?:₹|\$|inr|usd)\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)\s*(?:cr|crore|mn|million)?\s*(?:revenue|sales)",
+        ],
+        "net_profit": [
+            r"(?:profit\s+after\s+tax|pat|net\s+profit|profit\s+for\s+the\s+(?:year|period)|net\s+income)[\s:\-=|]+(?:₹|\$|inr|usd)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
+        ],
+        "debt": [
+            r"(?:total\s+debt|borrowings|total\s+borrowings)[\s:\-=|]+(?:₹|\$|inr|usd)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
+        ],
+        "equity": [
+            r"(?:total\s+equity|shareholders['\s]+equity|net\s+worth)[\s:\-=|]+(?:₹|\$|inr|usd)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
+        ],
+        "current_assets": [
+            r"(?:total\s+)?current\s+assets[\s:\-=|]+(?:₹|\$|inr|usd)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
+        ],
+        "current_liabilities": [
+            r"(?:total\s+)?current\s+liabilities[\s:\-=|]+(?:₹|\$|inr|usd)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
+        ],
+        "cfo": [
+            r"(?:cash\s+(?:flow\s+)?from\s+operating\s+activities|operating\s+cash\s+flow|cfo)[\s:\-=|]+(?:₹|\$|inr|usd)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
+        ],
+        "capex": [
+            r"(?:capital\s+expenditure(?:s)?|capex)[\s:\-=|]+(?:₹|\$|inr|usd)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
+        ]
+    }
+
+    for key, p_list in patterns.items():
+        for pat in p_list:
+            match = re.search(pat, all_text, re.IGNORECASE)
+            if match:
+                val_str = match.group(1).replace(",", "")
+                try:
+                    extracted[key] = float(val_str)
+                    break
+                except ValueError:
+                    pass
+
+    return extracted
+
+
 class AnomalyDetector:
     """Detects accounting anomalies, margin compression, and working capital strains."""
 
@@ -209,26 +275,38 @@ class DoxFin500PagePipeline:
         # STAGE 7: Deterministic Financial Engine & Validated Metrics
         _notify("financial_calculations", 80, "Calculating financial metrics...", "IN_PROGRESS")
         validated_metrics = None if force_recompute else cache.load_stage_data("validated_metrics")
-        if not validated_metrics:
-            inputs = raw_financial_inputs or {}
-            rev_curr = inputs.get("revenue_current", 16420.0)
-            rev_prev = inputs.get("revenue_previous", 14200.0)
-            net_profit_val = inputs.get("net_profit", 2150.0)
-            debt_val = inputs.get("debt", 3800.0)
-            equity_val = inputs.get("equity", 5200.0)
-            curr_assets = inputs.get("current_assets", 4100.0)
-            curr_liab = inputs.get("current_liabilities", 3200.0)
-            cfo_val = inputs.get("cfo", 1850.0)
-            capex_val = inputs.get("capex", 900.0)
+        if validated_metrics is None:
+            inputs = raw_financial_inputs if raw_financial_inputs is not None else extract_financial_inputs_from_document(classified_pages, tables_data)
+            
+            validated_metrics = {}
+            if inputs:
+                rev_curr = inputs.get("revenue_current")
+                rev_prev = inputs.get("revenue_previous")
+                net_profit_val = inputs.get("net_profit")
+                debt_val = inputs.get("debt")
+                equity_val = inputs.get("equity")
+                curr_assets = inputs.get("current_assets")
+                curr_liab = inputs.get("current_liabilities")
+                cfo_val = inputs.get("cfo")
+                capex_val = inputs.get("capex")
 
-            validated_metrics = {
-                "revenue_growth_yoy": growth(rev_curr, rev_prev),
-                "net_profit_margin": net_profit_margin(net_profit_val, rev_curr),
-                "debt_to_equity": debt_to_equity(debt_val, equity_val),
-                "current_ratio": current_ratio(curr_assets, curr_liab),
-                "free_cash_flow": free_cash_flow(cfo_val, capex_val),
-                "net_profit": net_profit_val
-            }
+                if rev_curr is not None:
+                    validated_metrics["consolidated_revenue"] = rev_curr
+                if net_profit_val is not None:
+                    validated_metrics["net_profit"] = net_profit_val
+                if rev_curr is not None and rev_prev is not None:
+                    validated_metrics["revenue_growth_yoy"] = growth(rev_curr, rev_prev)
+                if net_profit_val is not None and rev_curr is not None:
+                    validated_metrics["net_profit_margin"] = net_profit_margin(net_profit_val, rev_curr)
+                if debt_val is not None and equity_val is not None:
+                    validated_metrics["debt_to_equity"] = debt_to_equity(debt_val, equity_val)
+                if curr_assets is not None and curr_liab is not None:
+                    validated_metrics["current_ratio"] = current_ratio(curr_assets, curr_liab)
+                if cfo_val is not None and capex_val is not None:
+                    validated_metrics["free_cash_flow"] = free_cash_flow(cfo_val, capex_val)
+                elif cfo_val is not None:
+                    validated_metrics["free_cash_flow"] = cfo_val
+
             cache.save_stage_data("validated_metrics", validated_metrics)
         cache.update_stage_status("financial_calculations", "COMPLETED", progress_percent=85, current_stage="Financial calculations")
         _notify("financial_calculations", 85, "Financial calculations", "COMPLETED")
@@ -237,7 +315,7 @@ class DoxFin500PagePipeline:
         _notify("anomaly_detection", 88, "Evaluating anomaly rules...", "IN_PROGRESS")
         anomalies_data = None if force_recompute else cache.load_stage_data("anomalies")
         if anomalies_data is None:
-            anomalies_data = AnomalyDetector.evaluate_financial_health(validated_metrics)
+            anomalies_data = AnomalyDetector.evaluate_financial_health(validated_metrics) if validated_metrics else []
             cache.save_stage_data("anomalies", anomalies_data)
         cache.update_stage_status("anomaly_detection", "COMPLETED", progress_percent=90, current_stage="Anomaly detection")
         _notify("anomaly_detection", 90, "Anomaly detection", "COMPLETED")

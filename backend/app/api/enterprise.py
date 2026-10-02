@@ -176,28 +176,44 @@ def get_production_system_matrix():
     - Hardware Profile
     - Cryptographic Offline License
     """
-    hw = HardwareService.get_hardware_profile()
-    lic = license_service.verify_license()
+# ==========================================
+# 4. HARDWARE PROFILING & QWEN MODEL SWITCHER
+# ==========================================
 
-    return {
-        "system_status": "ONLINE",
-        "architecture_topology": "Centralized Host -> Multi-User Browser Access",
-        "pipeline_subsystems": {
-            "fastapi_host": {"status": "ACTIVE", "port": 8000},
-            "pymupdf_fast_pass": {"status": "READY", "mode": "C-Engine Native"},
-            "docling_table_extractor": {"status": "READY", "mode": "Deterministic Markdown"},
-            "qwen_vl_vision": {"status": "READY", "mode": "Selective Financial Pages"},
-            "deterministic_financial_engine": {"status": "ACTIVE", "principle": "Python Calculates, Zero Hallucination"},
-            "faiss_vector_store": {"status": "READY", "index": "L2 Flat & Cosine"},
-            "rag_evidence_synthesizer": {"status": "READY", "citation_policy": "Strict Page & Section Traceability"}
-        },
-        "hardware": hw,
-        "license": {
-            "valid": lic.get("valid", False),
-            "customer": lic.get("customer", "Unknown"),
-            "max_users": lic.get("max_users", 0),
-            "expires": lic.get("expires", "N/A"),
-            "features": lic.get("features", [])
+class SetHardwareModeRequest(BaseModel):
+    mode: str = Field(..., description="AUTO, LITE (Qwen-3B 4-bit), BALANCED (Qwen-7B 4-bit), PERFORMANCE (Qwen-7B bfloat16)")
+
+
+@router.get("/hardware/profile", tags=["Hardware & Vision Models"])
+def get_hardware_profile():
+    """
+    Auto-detects physical CPU cores, System RAM, physical NVIDIA GPU, and dedicated VRAM.
+    Recommends optimal Qwen VLM tier and quantization based on actual machine specs.
+    """
+    return HardwareService.get_hardware_profile()
+
+
+@router.get("/hardware/config", tags=["Hardware & Vision Models"])
+def get_hardware_config():
+    """
+    Returns active execution mode, active Qwen vision model, memory limits, and hardware profile.
+    """
+    return HardwareService.get_execution_mode_config()
+
+
+@router.post("/hardware/mode", tags=["Hardware & Vision Models"])
+def switch_hardware_execution_mode(payload: SetHardwareModeRequest):
+    """
+    Dynamically switches between Qwen VLM model tiers (LITE / BALANCED / PERFORMANCE / AUTO).
+    """
+    try:
+        updated_config = HardwareService.set_execution_mode(payload.mode)
+        return {
+            "status": "success",
+            "message": f"Execution mode set to {payload.mode.upper()}",
+            "active_config": updated_config
         }
-    }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
