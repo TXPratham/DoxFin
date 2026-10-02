@@ -14,3 +14,25 @@ class FinancialMetricResponse(BaseModel):
     value: float
     unit: str = "%"
     status: str = "normal"
+
+
+class RAGQueryRequest(BaseModel):
+    query: str
+    document_id: str
+    top_k: int = 5
+
+
+class RAGCitation(BaseModel):
+    page_number: int
+    section: str
+    chunk_id: Optional[str] = None
+    score: float
+    text_snippet: str
+
+
+class RAGQueryResponse(BaseModel):
+    query: str
+    document_id: str
+    answer: str
+    citations: List[RAGCitation]
+    retrieved_chunks_count: int
