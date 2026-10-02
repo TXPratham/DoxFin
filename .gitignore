@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+
+# Node / Frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# DoxFin App Cache & Local Storage
+backend/cache/*
+!backend/cache/.gitkeep
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/vector_store/*.index
+backend/vector_store/*_metadata.json
+!backend/vector_store/.gitkeep
+backend/extracted/*
+!backend/extracted/.gitkeep
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+doxfin.db
+
+# IDE & OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+.agents/

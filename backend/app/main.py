@@ -1,11 +1,25 @@
+import sys
+from pathlib import Path
+import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.app.api.documents import router as documents_router
+
+# Ensure both backend root and repo root are in sys.path
+backend_dir = Path(__file__).resolve().parent.parent
+repo_root = backend_dir.parent
+for p in [str(backend_dir), str(repo_root)]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+from app.database.database import init_db
+from app.api.documents import router as documents_router
 
 app = FastAPI(
     title="DoxFin API",
     description="Privacy-first, Multimodal Financial Document Intelligence Platform",
     version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
 app.add_middleware(
@@ -16,6 +30,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Initialize database schema on startup
+@app.on_event("startup")
+def on_startup():
+    init_db()
+
 app.include_router(documents_router, prefix="/api/v1/documents", tags=["Documents"])
 
 
@@ -25,9 +44,21 @@ def root():
         "status": "online",
         "service": "DoxFin Financial Document Intelligence Platform",
         "version": "1.0.0",
+        "docs": "http://127.0.0.1:8000/docs",
+        "endpoints": {
+            "upload_document": "POST /api/v1/documents",
+            "document_status": "GET /api/v1/documents/{id}/status",
+            "financial_metrics": "GET /api/v1/documents/{id}/metrics",
+            "anomalies": "GET /api/v1/documents/{id}/anomalies",
+            "rag_query": "POST /api/v1/documents/{id}/query"
+        }
     }
 
 
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
+
+if __name__ == "__main__":
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
