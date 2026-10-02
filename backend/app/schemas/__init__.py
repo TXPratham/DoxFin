@@ -1,28 +1,42 @@
-"""Pydantic Schemas for DoxFin FastAPI Endpoints (Phase 25)"""
+"""Pydantic Schemas for DoxFin FastAPI Endpoints (Phases 25, 27 & 28)"""
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 
 class DocumentUploadResponse(BaseModel):
     document_id: str
+    job_id: str
     filename: str
-    status: str
-    page_count: int
-    message: str
+    status: str = "processing"
+    page_count: Optional[int] = None
+    message: str = "Document accepted for asynchronous processing."
 
 
-class StageProgress(BaseModel):
-    stage_name: str
-    status: str
+class StageStatus(BaseModel):
+    name: str
+    status: str  # 'COMPLETED', 'IN_PROGRESS', 'PENDING', 'FAILED'
+    icon: Optional[str] = None
+
+
+class StageDetailItem(BaseModel):
+    key: str
+    label: str
+    status: str  # 'COMPLETED', 'IN_PROGRESS', 'PENDING', 'FAILED'
+    icon: Optional[str] = None
 
 
 class DocumentStatusResponse(BaseModel):
     document_id: str
+    job_id: Optional[str] = None
     filename: str
-    status: str
-    page_count: int
+    status: str  # 'uploaded', 'processing', 'completed', 'failed'
+    progress_percent: int = 0
+    current_stage: str = "Pending"
+    page_count: int = 0
     stages: Dict[str, str]
+    stage_details: Optional[List[StageDetailItem]] = None
     last_updated: Optional[str] = None
+
 
 
 class MetricItem(BaseModel):
