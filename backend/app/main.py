@@ -11,8 +11,10 @@ for p in [str(backend_dir), str(repo_root)]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from app.database.database import init_db
-from app.api.documents import router as documents_router
+from app.database.database import init_db, get_db
+from app.api.documents import router as documents_router, get_document_status
+from sqlalchemy.orm import Session
+from fastapi import Depends
 
 app = FastAPI(
     title="DoxFin API",
@@ -36,6 +38,14 @@ def on_startup():
     init_db()
 
 app.include_router(documents_router, prefix="/api/v1/documents", tags=["Documents"])
+app.include_router(documents_router, prefix="/documents", include_in_schema=False)
+
+
+@app.get("/api/v1/jobs/{job_id}", tags=["Jobs"], summary="Get processing status by job_id")
+@app.get("/jobs/{job_id}", include_in_schema=False)
+def get_job_status_direct(job_id: str, db: Session = Depends(get_db)):
+    return get_document_status(document_id=job_id, db=db)
+
 
 
 @app.get("/")
