@@ -110,13 +110,16 @@ class ProcessingJob(Base):
 
     id = Column(String(64), primary_key=True, default=generate_uuid)
     document_id = Column(String(64), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
-    stage = Column(String(64), nullable=False)  # 'pymupdf', 'docling', 'qwen_vl', 'vector_indexing'
+    stage = Column(String(64), nullable=False)  # 'overall', 'pymupdf', 'docling', 'qwen_vl', 'vector_indexing'
     status = Column(String(32), default="PENDING")  # 'PENDING', 'IN_PROGRESS', 'COMPLETED', 'FAILED'
+    progress_percent = Column(Integer, default=0)
+    current_stage = Column(String(128), default="Pending")
     error_message = Column(Text, nullable=True)
     started_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
 
     document = relationship("Document", back_populates="processing_jobs")
+
 
 
 class FinancialMetric(Base):
