@@ -1,13 +1,11 @@
-"""Embedding Service for document chunk vectorization"""
-from typing import List
+from sentence_transformers import SentenceTransformer
+
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
 
-class EmbeddingService:
-    def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
-        self.model_name = model_name
+def create_embeddings(texts):
 
-    def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """
-        Generate dense vector embeddings for texts.
-        """
-        return []
+    return model.encode(
+        texts,
+        normalize_embeddings=True
+    )
