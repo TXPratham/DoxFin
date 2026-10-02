@@ -8,8 +8,11 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
+BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+DEFAULT_DB_PATH = BACKEND_DIR / "doxfin.db"
+
 # Environment variable DATABASE_URL overrides default
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./doxfin.db")
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH.as_posix()}")
 
 # SQLite specific connect args
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
@@ -44,3 +47,8 @@ def init_db():
     """Create all tables in the database."""
     from app.database import models
     Base.metadata.create_all(bind=engine)
+
+
+# Auto-initialize database on import
+init_db()
+
