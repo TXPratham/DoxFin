@@ -1,0 +1,15 @@
+{
+  "document_id": "doc_test_sample_fin",
+  "total_pages": 3,
+  "text_pages": 0,
+  "table_pages": 3,
+  "chart_pages": 0,
+  "skipped_pages": 0,
+  "table_page_numbers": [
+    1,
+    2,
+    3
+  ],
+  "chart_page_numbers": [],
+  "skipped_page_numbers": []
+}

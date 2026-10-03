@@ -109,9 +109,14 @@ def create_document_chunks(
     all_chunks: List[Dict[str, Any]] = []
 
     for page in pages:
-        page_num = page.get("page_number", 1)
+        page_num = page.get("page_number", page.get("page", 1))
         raw_text = page.get("text", "")
         table_md = page.get("markdown") or page.get("table_markdown", "")
+
+        # Detect section title and infer source type
+        primary_content = table_md if table_md and table_md.strip() else raw_text
+        section = detect_section_title(primary_content)
+        source_type = infer_source_type(section, primary_content)
 
         # 1. If table markdown exists, keep table chunks intact (chunk_size=2500) so columns & rows are never severed
         if table_md and table_md.strip():

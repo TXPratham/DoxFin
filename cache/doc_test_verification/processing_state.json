@@ -1,0 +1,28 @@
+{
+  "document_id": "doc_test_verification",
+  "progress_percent": 100,
+  "current_stage": "RAG indexing",
+  "created_at": "2026-10-03T22:34:47.919655",
+  "last_updated": "2026-10-03T22:35:40.824252",
+  "stages": {
+    "file_validation": "COMPLETED",
+    "pymupdf_fast_pass": "COMPLETED",
+    "page_classification": "COMPLETED",
+    "text_extraction": "COMPLETED",
+    "table_extraction": "COMPLETED",
+    "chart_analysis": "COMPLETED",
+    "financial_calculations": "COMPLETED",
+    "anomaly_detection": "COMPLETED",
+    "rag_indexing": "COMPLETED",
+    "metadata": "COMPLETED",
+    "routes": "COMPLETED",
+    "pages": "COMPLETED",
+    "text": "COMPLETED",
+    "tables": "COMPLETED",
+    "charts": "COMPLETED",
+    "normalized_document": "COMPLETED",
+    "validated_metrics": "COMPLETED",
+    "anomalies": "COMPLETED",
+    "extracted_text": "COMPLETED"
+  }
+}

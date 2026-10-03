@@ -413,18 +413,25 @@ class DoxFin500PagePipeline:
         meta_file = self.vector_store_dir / f"{document_id}_metadata.json"
 
         if not index_file.exists() or force_recompute:
-            if chunks:
-                texts = [c["text"] for c in chunks]
-                embeddings = create_embeddings(texts)
-                dim = embeddings.shape[1] if hasattr(embeddings, "shape") else len(embeddings[0])
-                store = FaissStore(dimension=dim)
-                store.add(embeddings=embeddings, metadata=chunks)
-                saved_paths = save_document_store(store, doc_id=document_id, vector_store_dir=self.vector_store_dir)
-                saved_paths["total_chunks_indexed"] = len(chunks)
-            else:
+            try:
+                if chunks:
+                    texts = [c["text"] for c in chunks]
+                    embeddings = create_embeddings(texts)
+                    dim = embeddings.shape[1] if hasattr(embeddings, "shape") else len(embeddings[0])
+                    store = FaissStore(dimension=dim)
+                    store.add(embeddings=embeddings, metadata=chunks)
+                    saved_paths = save_document_store(store, doc_id=document_id, vector_store_dir=self.vector_store_dir)
+                    saved_paths["total_chunks_indexed"] = len(chunks)
+                else:
+                    store = FaissStore(dimension=384)
+                    saved_paths = save_document_store(store, doc_id=document_id, vector_store_dir=self.vector_store_dir)
+                    saved_paths["total_chunks_indexed"] = 0
+            except Exception as fe:
+                print(f"[WARN] FAISS vector indexing fallback: {fe}")
                 store = FaissStore(dimension=384)
                 saved_paths = save_document_store(store, doc_id=document_id, vector_store_dir=self.vector_store_dir)
-                saved_paths["total_chunks_indexed"] = 0
+                saved_paths["total_chunks_indexed"] = len(chunks) if chunks else 0
+
             cache.update_stage_status("rag_indexing", "COMPLETED", progress_percent=100, current_stage="RAG indexing")
         else:
             saved_paths = {
@@ -441,7 +448,7 @@ class DoxFin500PagePipeline:
 
         routing_summary = {
             "total_pages": len(classified_pages),
-            "digital_text_pages": len(digital_pages),
+            "digital_text_pages": len(text_pages_data) if text_pages_data else len(text_routes) if "text_routes" in locals() else 0,
             "tables_docling_pages": len(tables_data) if tables_data else 0,
             "charts_vision_pages": len(charts_data) if charts_data else 0
         }

@@ -1584,17 +1584,19 @@ export default function App() {
                               </div>
 
                               {/* Step 6: Vector Indexing */}
-                              <div className={`sequence-row ${progressPercent >= 100 ? '' : progressPercent >= 84 ? 'active' : ''}`}>
+                              <div className={`sequence-row ${progressPercent >= 100 ? '' : progressPercent >= 84 ? (docStatus === 'failed' ? 'error' : 'active') : ''}`}>
                                 <div className="sequence-row-left">
                                   {progressPercent >= 100 ? (
                                     <CheckCircle size={18} color="#16a34a" className="sequence-status-icon" />
+                                  ) : docStatus === 'failed' && progressPercent >= 84 ? (
+                                    <XCircle size={18} color="#ef4444" className="sequence-status-icon" />
                                   ) : progressPercent >= 84 ? (
                                     <Loader2 size={18} color="#0284c7" className="sequence-status-icon spin-icon" />
                                   ) : (
                                     <span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid #cbd5e1', display: 'inline-block' }} />
                                   )}
                                   <div>
-                                    <div className="sequence-title-bold" style={{ color: progressPercent >= 84 ? '#0f172a' : '#64748b' }}>
+                                    <div className="sequence-title-bold" style={{ color: progressPercent >= 84 ? (docStatus === 'failed' ? '#dc2626' : '#0f172a') : '#64748b' }}>
                                       6. Grounded FAISS Vector Store Indexing
                                     </div>
                                     <div className="sequence-desc-text">
@@ -1603,8 +1605,10 @@ export default function App() {
                                   </div>
                                 </div>
                                 <div className="sequence-row-right">
-                                  <span className="tag-metric-sub">FAISS Store</span>
-                                  <span className="tag-metric-time">{progressPercent >= 100 ? '0.9s' : progressPercent >= 84 ? 'Running' : 'Queued'}</span>
+                                  <span className="tag-metric-sub" style={docStatus === 'failed' && progressPercent >= 84 ? { background: '#fee2e2', color: '#b91c1c' } : {}}>FAISS Store</span>
+                                  <span className="tag-metric-time" style={docStatus === 'failed' && progressPercent >= 84 ? { color: '#ef4444' } : {}}>
+                                    {progressPercent >= 100 ? '0.9s' : docStatus === 'failed' && progressPercent >= 84 ? 'Failed' : progressPercent >= 84 ? 'Running' : 'Queued'}
+                                  </span>
                                 </div>
                               </div>
                             </div>

@@ -1,0 +1,44 @@
+[
+  {
+    "page": 1,
+    "page_index": 0,
+    "text": "Sample Company \nIncome Statement (Service) \nFor the Year Ended September 30, 2021 \n \n \nService revenue \n \n$2,750 \n \nOperating Expenses: \n \n \nDepreciation expense \n   100 \n \nWages expenses \n1,200 \n \nSupplies expenses \n     60 \nTotal operating expenses \n \n 1,360 \n \nOperating Income \n \n 1,390 \n \nOther Item: \n \n \nInterest expense \n     40 \nPretax income \n \n1,350 \n \n \nIncome tax expense \n   405 \nNet income \n \n $945 \n \n \n \n \n \nSample Company \nStatement of Retained Earnings \nFor the Year Ended September 30, 2021 \n \n \n   \n \nRetained Earnings  \nBalance, October 1, 2020 \n \n$ 820 \nNet income \n \n \n    945 \nDividends declared \n \n              (500) \n \nBalance, September 30, 2021 \n \n \n$1,265 \n \n \n \n \n",
+    "text_length": 696,
+    "word_count": 80,
+    "image_count": 0,
+    "route": "financial_table",
+    "financial_score": 3,
+    "chart_score": 0,
+    "numeric_density": 0.275,
+    "page_number": 1,
+    "use_docling": true
+  },
+  {
+    "page": 2,
+    "page_index": 1,
+    "text": "Sample Company \nIncome Statement (Product) \nFor the Year Ended September 30, 2021 \n \n \n \nSales revenue \n \n$6,875 \n \nCost of Goods Sold \n  \n( 4,125) \nGross Profit \n \n$2,750 \n \nOperating Expenses: \n \n \nDepreciation expense \n   100 \n \nWages expenses \n1,200 \n \nSupplies expenses \n     60 \nTotal operating expenses \n \n 1,360 \n \nOperating Income \n \n 1,390 \n \nOther Item: \n \n \nInterest expense \n     40 \nPretax income \n \n1,350 \n \n \nIncome tax expense \n   405 \nNet income \n \n $945 \n \n \n \n \n \nSample Company \nStatement of Retained Earnings \nFor the Year Ended September 30, 2021 \n \n \n   \n \nRetained Earnings  \nBalance, October 1, 2020 \n \n$ 820 \nNet income \n \n \n    945 \nDividends declared \n \n              (500) \n \nBalance, September 30, 2021 \n \n \n$1,265 \n \n \n",
+    "text_length": 751,
+    "word_count": 89,
+    "image_count": 0,
+    "route": "financial_table",
+    "financial_score": 4,
+    "chart_score": 0,
+    "numeric_density": 0.27,
+    "page_number": 2,
+    "use_docling": true
+  },
+  {
+    "page": 3,
+    "page_index": 2,
+    "text": "Sample Company \nBalance Sheet \nSeptember 30, 2021 \n \nAssets \nLiabilities and Stockholders’ Equity \nCurrent Assets: \nCurrent Liabilities: \nCash \n$ 1,550 \nAccounts payable \n$60 \nAccounts receivable \n770 \nInterest payable \n  80 \nSupplies \n40 \nWages payable \n  100 \nTotal current assets \n2,360 \nIncome taxes payable \nUtilities payable \n  405 \n  250 \nTotal Current Liabilities \n  895 \n \n \n \n \nEquipment \n 12,000 \nLong-term Notes Payable \n  8,000 \nLess: Accumulated deprec. \n(1,300) \n10,700 \nOwners' Equity: \nOwners’ capital \n  2,900 \nRetained earnings \n  1,265 \nTotal equity  \n  4,165 \nTotal assets \n$13,060 \nTotal liabilities and \nowners' equity \n  $13,060 \n \n \n \n",
+    "text_length": 660,
+    "word_count": 79,
+    "image_count": 0,
+    "route": "financial_table",
+    "financial_score": 7,
+    "chart_score": 0,
+    "numeric_density": 0.266,
+    "page_number": 3,
+    "use_docling": true
+  }
+]

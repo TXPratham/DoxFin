@@ -1,0 +1,22 @@
+{
+  "text_pages": [],
+  "table_pages": [
+    {
+      "page_number": 1,
+      "markdown": "Service revenue\n\n## Sample Company\n\n## Income Statement (Service) For the Year Ended September 30, 2021\n\n$2,750\n\n| Operating Expenses:      |       |       |\n|--------------------------|-------|-------|\n| Depreciation expense     |   100 |       |\n| Wages expenses           | 1,200 |       |\n| Supplies expenses        |    60 |       |\n| Total operating expenses |       | 1,360 |\n| Operating Income         |       | 1,390 |\n| Other Item:              |       |       |\n| Interest expense         |    40 |       |\n| Pretax income            |       | 1,350 |\n| Income tax expense       |   405 |       |\n| Net income               |       | $945  |\n\n## Sample Company\n\nStatement of Retained Earnings For the Year Ended September 30, 2021\n\n|                             | Retained Earnings   |\n|-----------------------------|---------------------|\n| Balance, October 1, 2020    | $ 820               |\n| Net income                  | 945                 |\n| Dividends declared          | (500)               |\n| Balance, September 30, 2021 | $1,265              |",
+      "source": "docling_selective"
+    },
+    {
+      "page_number": 2,
+      "markdown": "## Sample Company\n\n## Income Statement (Product) For the Year Ended September 30, 2021\n\n| Sales revenue            |       | $6,875   |\n|--------------------------|-------|----------|\n| Cost of Goods Sold       |       | ( 4,125) |\n| Gross Profit             |       | $2,750   |\n| Operating Expenses:      |       |          |\n| Depreciation expense     |   100 |          |\n| Wages expenses           | 1,200 |          |\n| Supplies expenses        |    60 |          |\n| Total operating expenses |       | 1,360    |\n| Operating Income         |       | 1,390    |\n| Other Item:              |       |          |\n| Interest expense         |    40 |          |\n| Pretax income            |       | 1,350    |\n| Income tax expense       |   405 |          |\n| Net income               |       | $945     |\n\n## Sample Company\n\n## Statement of Retained Earnings For the Year Ended September 30, 2021\n\n|                             | Retained Earnings   |\n|-----------------------------|---------------------|\n| Balance, October 1, 2020    | $ 820               |\n| Net income                  | 945                 |\n| Dividends declared          | (500)               |\n| Balance, September 30, 2021 | $1,265              |",
+      "source": "docling_selective"
+    },
+    {
+      "page_number": 3,
+      "markdown": "## Sample Company Balance Sheet\n\n## September 30, 2021\n\n## Assets Liabilities and Stockholders' Equity\n\n| Current Assets:           |                | Current Liabilities:                 |         |\n|---------------------------|----------------|--------------------------------------|---------|\n| Cash                      | $ 1,550        | Accounts payable                     | $60     |\n| Accounts receivable       | 770            | Interest payable                     | 80      |\n| Supplies                  | 40             | Wages payable                        | 100     |\n| Total current assets      | 2,360          | Income taxes payable                 | 405     |\n|                           |                | Utilities payable                    | 250     |\n|                           |                | Total Current Liabilities            | 895     |\n| Equipment                 | 12,000         | Long-term Notes Payable              | 8,000   |\n| Less: Accumulated deprec. | (1,300) 10,700 | Owners' Equity:                      |         |\n|                           |                | Owners' capital                      | 2,900   |\n|                           |                | Retained earnings                    | 1,265   |\n|                           |                | Total equity                         | 4,165   |\n| Total assets              | $13,060        | Total liabilities and owners' equity | $13,060 |",
+      "source": "docling_selective"
+    }
+  ],
+  "chart_pages": [],
+  "skipped_pages": []
+}

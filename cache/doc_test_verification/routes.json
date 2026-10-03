@@ -1,0 +1,13 @@
+{
+  "document_id": "doc_test_verification",
+  "total_pages": 1,
+  "text_pages": 0,
+  "table_pages": 0,
+  "chart_pages": 0,
+  "skipped_pages": 1,
+  "table_page_numbers": [],
+  "chart_page_numbers": [],
+  "skipped_page_numbers": [
+    1
+  ]
+}
