@@ -113,34 +113,38 @@ def create_document_chunks(
         raw_text = page.get("text", "")
         table_md = page.get("markdown") or page.get("table_markdown", "")
 
-        # Combine table markdown and body text so financial figures are not lost
-        content_parts = []
+        # 1. If table markdown exists, keep table chunks intact (chunk_size=2500) so columns & rows are never severed
         if table_md and table_md.strip():
-            content_parts.append(table_md.strip())
+            table_chunks = chunk_text(table_md.strip(), chunk_size=2500, chunk_overlap=150)
+            for t_idx, t_txt in enumerate(table_chunks, start=1):
+                all_chunks.append({
+                    "chunk_id": f"{document_id}_p{page_num}_tbl_{t_idx}",
+                    "document_id": document_id,
+                    "page": page_num,
+                    "page_number": page_num,
+                    "section": section,
+                    "text": t_txt,
+                    "source_type": "table",
+                    "financial_score": max(5, page.get("financial_score", 0)),
+                    "needs_ocr": page.get("needs_ocr", False)
+                })
+
+        # 2. Process narrative text paragraphs
         if raw_text and raw_text.strip():
-            # If table markdown is not already containing the raw text
-            if not table_md or raw_text.strip() not in table_md:
-                content_parts.append(raw_text.strip())
-
-        content_text = "\n\n".join(content_parts) if content_parts else f"Page {page_num}: Consolidated Financial Statements and Disclosures"
-
-        section = detect_section_title(content_text)
-        source_type = infer_source_type(section, content_text)
-        text_chunks = chunk_text(content_text, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-
-        for c_idx, chunk_txt in enumerate(text_chunks, start=1):
-            chunk_id = f"{document_id}_p{page_num}_c{c_idx}"
-            chunk_payload = {
-                "chunk_id": chunk_id,
-                "document_id": document_id,
-                "page": page_num,
-                "page_number": page_num,
-                "section": section,
-                "text": chunk_txt,
-                "source_type": source_type,
-                "financial_score": page.get("financial_score", 0),
-                "needs_ocr": page.get("needs_ocr", False)
-            }
-            all_chunks.append(chunk_payload)
+            text_chunks = chunk_text(raw_text.strip(), chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+            for c_idx, chunk_txt in enumerate(text_chunks, start=1):
+                chunk_id = f"{document_id}_p{page_num}_c{c_idx}"
+                chunk_payload = {
+                    "chunk_id": chunk_id,
+                    "document_id": document_id,
+                    "page": page_num,
+                    "page_number": page_num,
+                    "section": section,
+                    "text": chunk_txt,
+                    "source_type": source_type,
+                    "financial_score": page.get("financial_score", 0),
+                    "needs_ocr": page.get("needs_ocr", False)
+                }
+                all_chunks.append(chunk_payload)
 
     return all_chunks

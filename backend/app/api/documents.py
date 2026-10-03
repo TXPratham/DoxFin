@@ -521,7 +521,9 @@ def query_document(
                 section=c["section"],
                 chunk_id=c.get("chunk_id"),
                 score=c["score"],
-                text_snippet=c["text_snippet"]
+                text_snippet=c["text_snippet"],
+                source_type=c.get("source_type", "general_text"),
+                text=c.get("text", c["text_snippet"])
             )
             for c in rag_res.get("citations", [])
         ]

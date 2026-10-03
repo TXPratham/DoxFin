@@ -169,7 +169,7 @@ class DocumentAnomaliesResponse(BaseModel):
 
 class DocumentQueryRequest(BaseModel):
     query: str
-    top_k: int = Field(default=5, ge=1, le=20)
+    top_k: int = Field(default=8, ge=1, le=20)
 
 
 class RAGCitation(BaseModel):
@@ -178,6 +178,8 @@ class RAGCitation(BaseModel):
     chunk_id: Optional[str] = None
     score: float
     text_snippet: str
+    source_type: Optional[str] = "general_text"
+    text: Optional[str] = None
 
 
 class DocumentQueryResponse(BaseModel):

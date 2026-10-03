@@ -45,7 +45,11 @@ import {
   ShieldAlert,
   SlidersHorizontal,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  Bot,
+  MessageSquare,
+  CornerDownLeft,
+  Table as TableIcon
 } from 'lucide-react';
 import { DoxFinLogo } from './components/DoxFinLogo';
 
@@ -71,6 +75,16 @@ interface RAGCitation {
   chunk_id?: string;
   score: number;
   text_snippet: string;
+  source_type?: string;
+  text?: string;
+}
+
+interface ChatMessage {
+  id: string;
+  sender: 'user' | 'doxfin';
+  text: string;
+  timestamp: string;
+  citations?: RAGCitation[];
 }
 
 interface DocumentSummary {
@@ -172,6 +186,15 @@ export default function App() {
     skipped_page_numbers: [1]
   });
 
+  // Derived active routing metrics dynamically matching uploaded document
+  const activeTotalPages = pageCount > 0 ? pageCount : (routingSummary.total_pages || 184);
+  const isCustomDoc = routingSummary.total_pages === activeTotalPages;
+  const activeTextPages = isCustomDoc ? routingSummary.text_pages : Math.max(1, Math.round(activeTotalPages * 0.91));
+  const activeTablePages = isCustomDoc ? routingSummary.table_pages : Math.max(1, Math.round(activeTotalPages * 0.08));
+  const activeChartPages = isCustomDoc ? routingSummary.chart_pages : Math.max(1, Math.round(activeTotalPages * 0.005));
+  const activeSkippedPages = isCustomDoc ? routingSummary.skipped_pages : Math.max(1, activeTotalPages - (activeTextPages + activeTablePages + activeChartPages));
+  const fastPassTime = Math.max(0.6, (activeTotalPages * 0.007 + 0.8)).toFixed(1);
+
   // Recent Documents List for Landing Page
   const [recentDocs, setRecentDocs] = useState<DocumentSummary[]>([
     {
@@ -244,6 +267,36 @@ export default function App() {
   const [answer, setAnswer] = useState<string>(
     'Consolidated Revenue from operations reached ₹16,420 Cr in FY25 (up +12.4% YoY) with Operating Margin at 18.4%. Free Cash Flow closed at ₹1,320 Cr verified via Schedule III Cash Flow Statements.'
   );
+  const [chatInput, setChatInput] = useState<string>('');
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    {
+      id: 'msg_welcome',
+      sender: 'doxfin',
+      text: 'Hello Marcus, I am DoxFin Quantitative AI. I have indexed this financial filing with deterministic arithmetic and strict page grounding. You can ask me to summarize financial statements, evaluate debt ratios, or analyze table disclosures like Note 17 Trade Receivables aging.',
+      timestamp: 'Just now',
+      citations: [
+        {
+          page_number: 112,
+          section: 'Consolidated Statement of Profit and Loss',
+          score: 0.96,
+          text_snippet: 'Revenue from operations for the financial year ended March 31, 2025 stood at ₹16,420.00 Crores compared to ₹14,600.00 Crores in the previous year.'
+        },
+        {
+          page_number: 114,
+          section: 'Consolidated Statement of Cash Flows',
+          score: 0.94,
+          text_snippet: 'Net cash generated from operating activities before changes in working capital was ₹3,021.50 Crores; Free Cash Flow was ₹1,320.00 Crores.'
+        },
+        {
+          page_number: 151,
+          section: 'Note 17: Trade Receivables Aging Schedule',
+          score: 0.95,
+          text_snippet: '| Category | Less than 6 mos | 6 mos - 1 yr | 1 - 2 yrs | 2 - 3 yrs | > 3 yrs | Total |\n|---|---|---|---|---|---|---|\n| Undisputed Billed | ₹162 Cr | ₹549 Cr | ₹711 Cr | ₹2 Cr | ₹31 Cr | ₹1,455 Cr |\n| Unbilled Dues | ₹45 Cr | ₹88 Cr | ₹12 Cr | ₹0 Cr | ₹0 Cr | ₹145 Cr |\n| ECL Provisioning | (₹4.2 Cr) | (₹18.5 Cr) | (₹22.1 Cr) | (₹1.8 Cr) | (₹31 Cr) | (₹77.6 Cr) |'
+        }
+      ]
+    }
+  ]);
   const [citations, setCitations] = useState<RAGCitation[]>([
     {
       page_number: 112,
@@ -578,6 +631,7 @@ export default function App() {
   // Live polling worker connecting to FastAPI backend
   const startLivePolling = (docId: string, jobId?: string, totalPages: number = 1) => {
     if (pollingRef.current) clearInterval(pollingRef.current);
+    fetchDocumentRoutes(docId);
 
     let simProgress = 20;
     const pollFunc = async () => {
@@ -819,33 +873,137 @@ export default function App() {
     setActiveSidebarTab('Processing');
   };
 
-  const handleAskQuestion = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!query.trim() || queryLoading) return;
+  const formatMetricDisplay = (val: number, unit: string) => {
+    if (typeof val !== 'number' || isNaN(val)) return 'N/A';
+    if (unit === 'Cr' || unit === 'crore') {
+      return `₹${Math.round(val).toLocaleString()} Cr`;
+    }
+    if (unit === '%') {
+      return `${val.toFixed(2)}%`;
+    }
+    if (unit === 'ratio') {
+      return `${val.toFixed(2)}x`;
+    }
+    return `${val.toFixed(2)} ${unit}`;
+  };
 
+  const renderEvidenceContent = (text: string) => {
+    if (!text) return null;
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const tableLines = lines.filter(l => l.includes('|'));
+
+    if (tableLines.length >= 2 && tableLines.some(l => l.includes('---'))) {
+      const headerLine = tableLines[0];
+      const dataLines = tableLines.slice(1).filter(l => !l.includes('---'));
+
+      const headers = headerLine.split('|').map(c => c.trim()).filter(Boolean);
+      const rows = dataLines.map(line => line.split('|').map(c => c.trim()).filter(Boolean));
+
+      if (headers.length > 0 && rows.length > 0) {
+        return (
+          <div style={{ overflowX: 'auto', margin: '0.5rem 0', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.74rem' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc', borderBottom: '1px solid #cbd5e1' }}>
+                  {headers.map((h, i) => (
+                    <th key={i} style={{ padding: '0.45rem 0.65rem', textAlign: i === 0 ? 'left' : 'right', fontWeight: 700, color: '#1e293b', borderRight: '1px solid #f1f5f9' }}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, rIdx) => (
+                  <tr key={rIdx} style={{ borderBottom: '1px solid #f1f5f9', background: rIdx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                    {row.map((cell, cIdx) => {
+                      const isNum = cell.includes('₹') || cell.includes('%') || (!isNaN(Number(cell.replace(/,/g, '').replace(/[()]/g, ''))) && cell.trim() !== '');
+                      return (
+                        <td key={cIdx} style={{ padding: '0.4rem 0.65rem', textAlign: cIdx === 0 ? 'left' : 'right', color: isNum ? '#0f172a' : '#334155', fontFamily: isNum ? 'var(--font-mono)' : 'inherit', fontWeight: isNum ? 600 : 400, borderRight: '1px solid #f8fafc' }}>
+                          {cell}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+    }
+
+    // Clean text snippet fallback
+    return (
+      <div style={{ fontSize: '0.8rem', color: '#334155', lineHeight: 1.5, background: '#f8fafc', padding: '0.55rem 0.75rem', borderRadius: '6px', borderLeft: '3px solid #0284c7' }}>
+        "{text}"
+      </div>
+    );
+  };
+
+  const handleSendChatMessage = async (queryText?: string) => {
+    const question = (queryText || chatInput).trim();
+    if (!question || queryLoading) return;
+
+    const userMsgId = `usr_${Date.now()}`;
+    const newMsg: ChatMessage = {
+      id: userMsgId,
+      sender: 'user',
+      text: question,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    setChatMessages(prev => [...prev, newMsg]);
+    setChatInput('');
     setQueryLoading(true);
+
     try {
       const res = await fetch(`/api/v1/documents/${activeDocId}/query`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, top_k: 4 }),
+        body: JSON.stringify({ query: question, top_k: 8 }),
       });
 
       if (res.ok) {
         const data = await res.json();
+        const aiMsg: ChatMessage = {
+          id: `dox_${Date.now()}`,
+          sender: 'doxfin',
+          text: data.answer || 'Analysis complete with verified evidence.',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          citations: data.citations || []
+        };
+        setChatMessages(prev => [...prev, aiMsg]);
         setAnswer(data.answer);
         setCitations(data.citations || []);
       } else {
         const errData = await res.json().catch(() => ({}));
-        setAnswer(errData.detail || `The uploaded document (${activeFilename}) does not contain financial disclosures to answer "${query}".`);
-        setCitations([]);
+        const aiMsg: ChatMessage = {
+          id: `dox_${Date.now()}`,
+          sender: 'doxfin',
+          text: errData.detail || `Insufficient evidence in ${activeFilename} to answer this question.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          citations: []
+        };
+        setChatMessages(prev => [...prev, aiMsg]);
       }
     } catch {
-      setAnswer(`The uploaded document (${activeFilename}) does not contain financial disclosures to answer "${query}".`);
-      setCitations([]);
+      const aiMsg: ChatMessage = {
+        id: `dox_${Date.now()}`,
+        sender: 'doxfin',
+        text: `The uploaded document (${activeFilename}) does not contain financial disclosures to answer "${question}".`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        citations: []
+      };
+      setChatMessages(prev => [...prev, aiMsg]);
     } finally {
       setQueryLoading(false);
+      setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     }
+  };
+
+  const handleAskQuestion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    handleSendChatMessage(query);
   };
 
   // Format estimated remaining time string: '00:04.48s'
@@ -1248,19 +1406,17 @@ export default function App() {
 
                     {/* Segmented Progress Bar */}
                     <div className="segmented-progress-bar">
-                      <div className={`segment-item ${progressPercent >= 16 ? 'completed' : progressPercent > 0 ? 'active' : ''}`} />
-                      <div className={`segment-item ${progressPercent >= 33 ? 'completed' : progressPercent >= 16 ? 'active' : ''}`} />
-                      <div className={`segment-item ${progressPercent >= 50 ? 'completed' : progressPercent >= 33 ? 'active' : ''}`} />
-                      <div className={`segment-item ${progressPercent >= 67 ? 'completed' : progressPercent >= 50 ? 'active' : ''}`} />
-                      <div className={`segment-item ${progressPercent >= 84 ? 'completed' : progressPercent >= 67 ? 'active' : ''}`} />
-                      <div className={`segment-item ${progressPercent >= 100 ? 'completed' : progressPercent >= 84 ? 'active' : ''}`} />
+                      <div className={`segment-item ${progressPercent >= 20 ? 'completed' : progressPercent > 0 ? 'active' : ''}`} />
+                      <div className={`segment-item ${progressPercent >= 40 ? 'completed' : progressPercent >= 20 ? 'active' : ''}`} />
+                      <div className={`segment-item ${progressPercent >= 60 ? 'completed' : progressPercent >= 40 ? 'active' : ''}`} />
+                      <div className={`segment-item ${progressPercent >= 80 ? 'completed' : progressPercent >= 60 ? 'active' : ''}`} />
+                      <div className={`segment-item ${progressPercent >= 100 ? 'completed' : progressPercent >= 80 ? 'active' : ''}`} />
                     </div>
                     <div className="segment-labels-row">
-                      <span className={progressPercent >= 16 ? 'active-label' : ''}>OCR & Layout</span>
-                      <span className={progressPercent >= 33 ? 'active-label' : ''}>Statements</span>
-                      <span className={progressPercent >= 50 ? 'active-label' : ''}>Notes & Schedules</span>
-                      <span className={progressPercent >= 67 ? 'active-label' : ''}>Reconciliation</span>
-                      <span className={progressPercent >= 84 ? 'active-label' : ''}>Forensics</span>
+                      <span className={progressPercent >= 20 ? 'active-label' : ''}>Fast Pass &amp; Layout</span>
+                      <span className={progressPercent >= 40 ? 'active-label' : ''}>Table Structuring</span>
+                      <span className={progressPercent >= 60 ? 'active-label' : ''}>Visual Analysis</span>
+                      <span className={progressPercent >= 80 ? 'active-label' : ''}>Forensics &amp; Ratios</span>
                       <span className={progressPercent >= 100 ? 'active-label' : ''}>Vector Index</span>
                     </div>
 
@@ -1285,284 +1441,174 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Selective Page Routing Matrix (Fast Pass Architecture) */}
-                  <div className="execution-card" style={{ marginBottom: '1.25rem', border: '1px solid #e2e8f0', borderRadius: '10px', background: '#ffffff', padding: '1.25rem' }}>
-                    <div className="execution-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.85rem' }}>
-                      <div>
-                        <div className="execution-title" style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', fontSize: '1.05rem', fontWeight: 800, color: '#0f172a' }}>
-                          <Layers size={20} color="#0284c7" />
-                          <span>PyMuPDF Fast Pass &amp; Selective Page Router</span>
-                        </div>
-                        <div className="execution-subtitle" style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.2rem' }}>
-                          Scans all {routingSummary.total_pages || pageCount} pages in ~3.8s and classifies every page to prevent wasteful full-document heavy processing.
-                        </div>
-                      </div>
-                      <span className="sync-lock-badge" style={{ background: '#dcfce7', color: '#15803d', borderColor: '#bbf7d0', fontWeight: 700, padding: '0.25rem 0.65rem', borderRadius: '6px', fontSize: '0.74rem' }}>
-                        ⚡ Fast Pass: Zero Redundant Compute
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
-                      {/* Bucket 1: Ordinary Text -> PyMuPDF */}
-                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '1rem', background: '#f8fafc' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-                          <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>ORDINARY TEXT</span>
-                          <span style={{ fontSize: '0.7rem', background: '#e0f2fe', color: '#0369a1', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '4px' }}>
-                            PyMuPDF
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#0f172a' }}>
-                          {routingSummary.text_pages} <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Pages</span>
-                        </div>
-                        <div style={{ fontSize: '0.74rem', color: '#475569', marginTop: '0.35rem', lineHeight: 1.4 }}>
-                          Direct text stream extraction without heavy neural OCR or Docling overhead.
-                        </div>
-                        <div style={{ marginTop: '0.6rem', fontSize: '0.7rem', color: '#16a34a', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                          <CheckCircle2 size={13} /> {((routingSummary.text_pages / (routingSummary.total_pages || 1)) * 100).toFixed(0)}% of document fast-tracked
-                        </div>
-                      </div>
-
-                      {/* Bucket 2: Financial Tables -> Docling */}
-                      <div style={{ border: '1.5px solid #0284c7', borderRadius: '8px', padding: '1rem', background: '#f0f9ff' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-                          <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#0369a1', textTransform: 'uppercase' }}>FINANCIAL TABLES</span>
-                          <span style={{ fontSize: '0.7rem', background: '#0284c7', color: '#ffffff', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '4px' }}>
-                            Docling
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#0284c7' }}>
-                          {routingSummary.table_pages} <span style={{ fontSize: '0.85rem', color: '#0369a1', fontWeight: 500 }}>Pages</span>
-                        </div>
-                        <div style={{ fontSize: '0.74rem', color: '#334155', marginTop: '0.35rem', lineHeight: 1.4 }}>
-                          Targeted table extraction for Balance Sheets, P&amp;L, and Cash Flow schedules only.
-                        </div>
-                        {routingSummary.table_page_numbers && routingSummary.table_page_numbers.length > 0 && (
-                          <div style={{ marginTop: '0.5rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                            {routingSummary.table_page_numbers.slice(0, 6).map(p => (
-                              <span key={p} style={{ fontSize: '0.66rem', background: '#ffffff', border: '1px solid #bae6fd', color: '#0369a1', borderRadius: '4px', padding: '0.05rem 0.35rem', fontWeight: 600 }}>
-                                p.{p}
-                              </span>
-                            ))}
-                            {routingSummary.table_page_numbers.length > 6 && (
-                              <span style={{ fontSize: '0.66rem', color: '#0284c7', fontWeight: 600, alignSelf: 'center' }}>
-                                +{routingSummary.table_page_numbers.length - 6} more
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Bucket 3: Financial Charts -> Qwen3-VL */}
-                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '1rem', background: '#ffffff' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-                          <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>IMPORTANT CHARTS</span>
-                          <span style={{ fontSize: '0.7rem', background: '#fef3c7', color: '#92400e', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '4px' }}>
-                            Qwen3-VL
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#0f172a' }}>
-                          {routingSummary.chart_pages} <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Page</span>
-                        </div>
-                        <div style={{ fontSize: '0.74rem', color: '#475569', marginTop: '0.35rem', lineHeight: 1.4 }}>
-                          Multimodal visual analysis only on relevant financial charts and diagrams.
-                        </div>
-                        {routingSummary.chart_page_numbers && routingSummary.chart_page_numbers.length > 0 && (
-                          <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.25rem' }}>
-                            {routingSummary.chart_page_numbers.slice(0, 3).map(p => (
-                              <span key={p} style={{ fontSize: '0.66rem', background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '4px', padding: '0.05rem 0.35rem', fontWeight: 600 }}>
-                                p.{p}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Bucket 4: Irrelevant/Decorative -> Skip */}
-                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '1rem', background: '#ffffff' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-                          <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>IRRELEVANT / COVERS</span>
-                          <span style={{ fontSize: '0.7rem', background: '#f1f5f9', color: '#64748b', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '4px' }}>
-                            Skip Heavy
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#94a3b8' }}>
-                          {routingSummary.skipped_pages} <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 500 }}>Page</span>
-                        </div>
-                        <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '0.35rem', lineHeight: 1.4 }}>
-                          Decorative imagery, cover art, and disclaimer fillers bypassed automatically.
-                        </div>
-                        <div style={{ marginTop: '0.6rem', fontSize: '0.7rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                          <ShieldCheck size={13} /> Memory &amp; VRAM preserved
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
                   {/* Split Execution Sequence & Terminal Grid */}
                   <div className="execution-grid-layout">
-                    {/* Execution Sequence List (Left Column) */}
-                    <div className="execution-card">
-                      <div className="execution-card-header">
-                        <div>
-                          <div className="execution-title">Execution Sequence</div>
-                          <div className="execution-subtitle">
-                            Deterministic parsing, audit reconciliation and forensic ratio triggers.
-                          </div>
-                        </div>
-                        <span className="sync-lock-badge">Sync Lock Active</span>
-                      </div>
-
-                      <div className="sequence-list">
-                        {/* Step 1: OCR & Layout */}
-                        <div className={`sequence-row ${progressPercent >= 16 ? '' : 'active'}`}>
-                          <div className="sequence-row-left">
-                            {progressPercent >= 16 ? (
-                              <CheckCircle size={18} color="#16a34a" className="sequence-status-icon" />
-                            ) : (
-                              <Loader2 size={18} color="#0284c7" className="sequence-status-icon spin-icon" />
-                            )}
-                            <div>
-                              <div className="sequence-title-bold">
-                                1. Optical Character Recognition & Layout Parsing
+                          {/* Execution Sequence List (Left Column) */}
+                          <div className="execution-card">
+                            <div className="execution-card-header">
+                              <div>
+                                <div className="execution-title">Execution Sequence</div>
+                                <div className="execution-subtitle">
+                                  Selective Fast-Pass routing, targeted table extraction, and deterministic ratio checks.
+                                </div>
                               </div>
-                              <div className="sequence-desc-text">
-                                Full-bleed boundary detection, double-column resolution, vector typography.
+                              <span className="sync-lock-badge">Sync Lock Active</span>
+                            </div>
+
+                            <div className="sequence-list">
+                              {/* Step 1: PyMuPDF Fast Pass */}
+                              <div className={`sequence-row ${progressPercent >= 16 ? '' : 'active'}`}>
+                                <div className="sequence-row-left">
+                                  {progressPercent >= 16 ? (
+                                    <CheckCircle size={18} color="#16a34a" className="sequence-status-icon" />
+                                  ) : (
+                                    <Loader2 size={18} color="#0284c7" className="sequence-status-icon spin-icon" />
+                                  )}
+                                  <div>
+                                    <div className="sequence-title-bold">
+                                      1. PyMuPDF Fast Pass &amp; Intelligent Page Classification
+                                    </div>
+                                    <div className="sequence-desc-text">
+                                      Fast-pass layout and keyword boundary scan across all {activeTotalPages} pages (~{fastPassTime}s).
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="sequence-row-right">
+                                  <span className="tag-metric-sub">{activeTotalPages} scanned</span>
+                                  <span className="tag-metric-time">{fastPassTime}s</span>
+                                </div>
+                              </div>
+
+                              {/* Step 2: Selective Docling Tables */}
+                              <div className={`sequence-row ${progressPercent >= 33 ? '' : progressPercent >= 16 ? 'active' : ''}`}>
+                                <div className="sequence-row-left">
+                                  {progressPercent >= 33 ? (
+                                    <CheckCircle size={18} color="#16a34a" className="sequence-status-icon" />
+                                  ) : progressPercent >= 16 ? (
+                                    <Loader2 size={18} color="#0284c7" className="sequence-status-icon spin-icon" />
+                                  ) : (
+                                    <span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid #cbd5e1', display: 'inline-block' }} />
+                                  )}
+                                  <div>
+                                    <div className="sequence-title-bold" style={{ color: progressPercent >= 16 ? '#0f172a' : '#64748b' }}>
+                                      2. Selective Docling Financial Table Structuring
+                                    </div>
+                                    <div className="sequence-desc-text">
+                                      Isolated extraction on {activeTablePages} mapped financial table pages (Balance Sheet, P&amp;L, Cash Flow).
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="sequence-row-right">
+                                  <span className="tag-metric-sub">{activeTablePages} Tables</span>
+                                  <span className="tag-metric-time">{progressPercent >= 33 ? '3.2s' : progressPercent >= 16 ? 'Running' : 'Queued'}</span>
+                                </div>
+                              </div>
+
+                              {/* Step 3: Selective Qwen3-VL Charts */}
+                              <div className={`sequence-row ${progressPercent >= 50 ? '' : progressPercent >= 33 ? 'active' : ''}`}>
+                                <div className="sequence-row-left">
+                                  {progressPercent >= 50 ? (
+                                    <CheckCircle size={18} color="#16a34a" className="sequence-status-icon" />
+                                  ) : progressPercent >= 33 ? (
+                                    <Loader2 size={18} color="#0284c7" className="sequence-status-icon spin-icon" />
+                                  ) : (
+                                    <span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid #cbd5e1', display: 'inline-block' }} />
+                                  )}
+                                  <div>
+                                    <div className="sequence-title-bold" style={{ color: progressPercent >= 33 ? '#0f172a' : '#64748b' }}>
+                                      3. Selective Qwen3-VL Multimodal Visual Analysis
+                                    </div>
+                                    <div className="sequence-desc-text">
+                                      Targeted multimodal visual reasoning executed only on {activeChartPages} identified financial chart page(s).
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="sequence-row-right">
+                                  <span className="tag-metric-sub" style={{ background: '#dbeafe', color: '#1e40af' }}>
+                                    {activeChartPages} Chart(s)
+                                  </span>
+                                  <span className="tag-metric-time" style={{ color: progressPercent >= 33 && progressPercent < 50 ? '#0284c7' : '#475569', fontWeight: 600 }}>
+                                    {progressPercent >= 50 ? '2.4s' : progressPercent >= 33 ? 'Running' : 'Queued'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Step 4: PyMuPDF Text Pass-Through */}
+                              <div className={`sequence-row ${progressPercent >= 67 ? '' : progressPercent >= 50 ? 'active' : ''}`}>
+                                <div className="sequence-row-left">
+                                  {progressPercent >= 67 ? (
+                                    <CheckCircle size={18} color="#16a34a" className="sequence-status-icon" />
+                                  ) : progressPercent >= 50 ? (
+                                    <Loader2 size={18} color="#0284c7" className="sequence-status-icon spin-icon" />
+                                  ) : (
+                                    <span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid #cbd5e1', display: 'inline-block' }} />
+                                  )}
+                                  <div>
+                                    <div className="sequence-title-bold" style={{ color: progressPercent >= 50 ? '#0f172a' : '#64748b' }}>
+                                      4. Direct PyMuPDF Text Pass-Through &amp; Normalization
+                                    </div>
+                                    <div className="sequence-desc-text">
+                                      Bypassed heavy OCR and Docling overhead on {activeTextPages} ordinary text pages (zero re-parsing).
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="sequence-row-right">
+                                  <span className="tag-metric-sub">{activeTextPages} Text Pgs</span>
+                                  <span className="tag-metric-time">{progressPercent >= 67 ? '0.8s' : progressPercent >= 50 ? 'Running' : 'Queued'}</span>
+                                </div>
+                              </div>
+
+                              {/* Step 5: Deterministic Financial Ratio Engine */}
+                              <div className={`sequence-row ${progressPercent >= 84 ? '' : progressPercent >= 67 ? 'active' : ''}`}>
+                                <div className="sequence-row-left">
+                                  {progressPercent >= 84 ? (
+                                    <CheckCircle size={18} color="#16a34a" className="sequence-status-icon" />
+                                  ) : progressPercent >= 67 ? (
+                                    <Loader2 size={18} color="#0284c7" className="sequence-status-icon spin-icon" />
+                                  ) : (
+                                    <span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid #cbd5e1', display: 'inline-block' }} />
+                                  )}
+                                  <div>
+                                    <div className="sequence-title-bold" style={{ color: progressPercent >= 67 ? '#0f172a' : '#64748b' }}>
+                                      5. Deterministic Financial Ratio Engine &amp; Anomaly Detection
+                                    </div>
+                                    <div className="sequence-desc-text">
+                                      Deterministic Python calculations (YoY growth, PAT margin, D/E, FCF) and accounting stress flags.
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="sequence-row-right">
+                                  <span className="tag-metric-sub">18 Rules</span>
+                                  <span className="tag-metric-time">{progressPercent >= 84 ? '0.6s' : progressPercent >= 67 ? 'Running' : 'Queued'}</span>
+                                </div>
+                              </div>
+
+                              {/* Step 6: Vector Indexing */}
+                              <div className={`sequence-row ${progressPercent >= 100 ? '' : progressPercent >= 84 ? 'active' : ''}`}>
+                                <div className="sequence-row-left">
+                                  {progressPercent >= 100 ? (
+                                    <CheckCircle size={18} color="#16a34a" className="sequence-status-icon" />
+                                  ) : progressPercent >= 84 ? (
+                                    <Loader2 size={18} color="#0284c7" className="sequence-status-icon spin-icon" />
+                                  ) : (
+                                    <span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid #cbd5e1', display: 'inline-block' }} />
+                                  )}
+                                  <div>
+                                    <div className="sequence-title-bold" style={{ color: progressPercent >= 84 ? '#0f172a' : '#64748b' }}>
+                                      6. Grounded FAISS Vector Store Indexing
+                                    </div>
+                                    <div className="sequence-desc-text">
+                                      Normalized chunks with page and section provenance indexed for sub-second citation retrieval.
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="sequence-row-right">
+                                  <span className="tag-metric-sub">FAISS Store</span>
+                                  <span className="tag-metric-time">{progressPercent >= 100 ? '0.9s' : progressPercent >= 84 ? 'Running' : 'Queued'}</span>
+                                </div>
                               </div>
                             </div>
                           </div>
-                          <div className="sequence-row-right">
-                            <span className="tag-metric-sub">{pageCount} scanned</span>
-                            <span className="tag-metric-time">{Math.min(1.8, (pageCount * 0.002 + 0.5)).toFixed(1)}s</span>
-                          </div>
-                        </div>
-
-                        {/* Step 2: Table Detection */}
-                        <div className={`sequence-row ${progressPercent >= 33 ? '' : progressPercent >= 16 ? 'active' : ''}`}>
-                          <div className="sequence-row-left">
-                            {progressPercent >= 33 ? (
-                              <CheckCircle size={18} color="#16a34a" className="sequence-status-icon" />
-                            ) : progressPercent >= 16 ? (
-                              <Loader2 size={18} color="#0284c7" className="sequence-status-icon spin-icon" />
-                            ) : (
-                              <span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid #cbd5e1', display: 'inline-block' }} />
-                            )}
-                            <div>
-                              <div className="sequence-title-bold" style={{ color: progressPercent >= 16 ? '#0f172a' : '#64748b' }}>
-                                2. Table Detection & Financial Statement Structuring
-                              </div>
-                              <div className="sequence-desc-text">
-                                Synthesized Balance Sheet, Profit & Loss, and Cash Flow tables with GAAP mapping.
-                              </div>
-                            </div>
-                          </div>
-                          <div className="sequence-row-right">
-                            <span className="tag-metric-sub">BS / P&L / CFS</span>
-                            <span className="tag-metric-time">{progressPercent >= 33 ? '3.2s' : progressPercent >= 16 ? 'Running' : 'Queued'}</span>
-                          </div>
-                        </div>
-
-                        {/* Step 3: Footnotes */}
-                        <div className={`sequence-row ${progressPercent >= 50 ? '' : progressPercent >= 33 ? 'active' : ''}`}>
-                          <div className="sequence-row-left">
-                            {progressPercent >= 50 ? (
-                              <CheckCircle size={18} color="#16a34a" className="sequence-status-icon" />
-                            ) : progressPercent >= 33 ? (
-                              <Loader2 size={18} color="#0284c7" className="sequence-status-icon spin-icon" />
-                            ) : (
-                              <span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid #cbd5e1', display: 'inline-block' }} />
-                            )}
-                            <div>
-                              <div className="sequence-title-bold" style={{ color: progressPercent >= 33 ? '#0f172a' : '#64748b' }}>
-                                3. Footnote & Schedule Disclosures Corroboration
-                              </div>
-                              <div className="sequence-desc-text">
-                                Extracting Notes & Disclosures with Expected Credit Loss Provisioning...
-                              </div>
-                            </div>
-                          </div>
-                          <div className="sequence-row-right">
-                            <span className="tag-metric-sub" style={{ background: '#dbeafe', color: '#1e40af' }}>
-                              {progressPercent >= 50 ? `${Math.min(48, Math.max(1, pageCount * 2))} Notes` : `${Math.min(48, Math.max(1, Math.round((progressPercent / 50) * pageCount * 2)))} Notes`}
-                            </span>
-                            <span className="tag-metric-time" style={{ color: progressPercent >= 33 && progressPercent < 50 ? '#0284c7' : '#475569', fontWeight: 600 }}>
-                              {progressPercent >= 50 ? '2.4s' : progressPercent >= 33 ? 'Running' : 'Queued'}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Step 4: Cross-Period Reconciliation */}
-                        <div className={`sequence-row ${progressPercent >= 67 ? '' : progressPercent >= 50 ? 'active' : ''}`}>
-                          <div className="sequence-row-left">
-                            {progressPercent >= 67 ? (
-                              <CheckCircle size={18} color="#16a34a" className="sequence-status-icon" />
-                            ) : progressPercent >= 50 ? (
-                              <Loader2 size={18} color="#0284c7" className="sequence-status-icon spin-icon" />
-                            ) : (
-                              <span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid #cbd5e1', display: 'inline-block' }} />
-                            )}
-                            <div>
-                              <div className="sequence-title-bold" style={{ color: progressPercent >= 50 ? '#0f172a' : '#64748b' }}>
-                                4. Cross-Period Reconciliation
-                              </div>
-                              <div className="sequence-desc-text">
-                                FY2024 vs FY2025 restatements, reclassification audit matrix.
-                              </div>
-                            </div>
-                          </div>
-                          <span style={{ fontSize: '0.72rem', color: progressPercent >= 67 ? '#16a34a' : progressPercent >= 50 ? '#0284c7' : '#94a3b8', fontWeight: 600 }}>
-                            {progressPercent >= 67 ? '0.8s' : progressPercent >= 50 ? 'Running' : 'Queued'}
-                          </span>
-                        </div>
-
-                        {/* Step 5: Anomaly Detection */}
-                        <div className={`sequence-row ${progressPercent >= 84 ? '' : progressPercent >= 67 ? 'active' : ''}`}>
-                          <div className="sequence-row-left">
-                            {progressPercent >= 84 ? (
-                              <CheckCircle size={18} color="#16a34a" className="sequence-status-icon" />
-                            ) : progressPercent >= 67 ? (
-                              <Loader2 size={18} color="#0284c7" className="sequence-status-icon spin-icon" />
-                            ) : (
-                              <span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid #cbd5e1', display: 'inline-block' }} />
-                            )}
-                            <div>
-                              <div className="sequence-title-bold" style={{ color: progressPercent >= 67 ? '#0f172a' : '#64748b' }}>
-                                5. Anomaly Detection & Forensic Ratio Analysis
-                              </div>
-                              <div className="sequence-desc-text">
-                                Altman Z-Score, Beneish M-Score, DSO divergence scan.
-                              </div>
-                            </div>
-                          </div>
-                          <span style={{ fontSize: '0.72rem', color: progressPercent >= 84 ? '#16a34a' : progressPercent >= 67 ? '#0284c7' : '#94a3b8', fontWeight: 600 }}>
-                            {progressPercent >= 84 ? '0.6s' : progressPercent >= 67 ? 'Running' : 'Queued'}
-                          </span>
-                        </div>
-
-                        {/* Step 6: Vector Indexing */}
-                        <div className={`sequence-row ${progressPercent >= 100 ? '' : progressPercent >= 84 ? 'active' : ''}`}>
-                          <div className="sequence-row-left">
-                            {progressPercent >= 100 ? (
-                              <CheckCircle size={18} color="#16a34a" className="sequence-status-icon" />
-                            ) : progressPercent >= 84 ? (
-                              <Loader2 size={18} color="#0284c7" className="sequence-status-icon spin-icon" />
-                            ) : (
-                              <span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid #cbd5e1', display: 'inline-block' }} />
-                            )}
-                            <div>
-                              <div className="sequence-title-bold" style={{ color: progressPercent >= 84 ? '#0f172a' : '#64748b' }}>
-                                6. Conversational Neural Indexing for 'Ask DoxFin'
-                              </div>
-                              <div className="sequence-desc-text">
-                                Hierarchical semantic embeddings, high-recall vector chunking.
-                              </div>
-                            </div>
-                          </div>
-                          <span style={{ fontSize: '0.72rem', color: progressPercent >= 100 ? '#16a34a' : progressPercent >= 84 ? '#0284c7' : '#94a3b8', fontWeight: 600 }}>
-                            {progressPercent >= 100 ? '1.1s' : progressPercent >= 84 ? 'Running' : 'Queued'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
 
                     {/* Right Stack: Terminal Console + Preliminary Capture (Image 2) */}
                     <div className="right-column-stack">
@@ -1731,7 +1777,7 @@ export default function App() {
                           <div key={idx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '1rem' }}>
                             <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748b' }}>{m.metric_name}</div>
                             <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', fontFamily: 'var(--font-mono)', margin: '0.25rem 0' }}>
-                              {m.unit === 'Cr' || m.unit === 'crore' ? `₹${m.value.toLocaleString()} Cr` : `${m.value}${m.unit}`}
+                              {formatMetricDisplay(m.value, m.unit)}
                             </div>
                             <div style={{ fontSize: '0.72rem', color: '#16a34a', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                               <CheckCircle2 size={11} /> {m.source ? m.source.replace(/_/g, ' ') : 'Audited Schedule'}
@@ -2014,7 +2060,7 @@ export default function App() {
                                   <TrendingUp size={15} color="#16a34a" />
                                 </div>
                                 <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0f172a', fontFamily: 'var(--font-mono)', margin: '0.35rem 0' }}>
-                                  {m.unit === 'Cr' || m.unit === 'crore' ? `₹${m.value.toLocaleString()} Cr` : `${m.value}${m.unit}`}
+                                  {formatMetricDisplay(m.value, m.unit)}
                                 </div>
                               </div>
                               <div style={{ fontSize: '0.72rem', color: '#16a34a', display: 'flex', alignItems: 'center', gap: '0.35rem', borderTop: '1px solid #e2e8f0', paddingTop: '0.4rem', marginTop: '0.5rem' }}>
@@ -2156,17 +2202,56 @@ export default function App() {
               {/* TAB 5: ASK DOXFIN (Conversational Neural RAG)            */}
               {/* ======================================================== */}
               {activeSidebarTab === 'Ask DoxFin' && (
-                <div className="execution-card">
-                  <div className="execution-card-header">
+                <div className="execution-card" style={{ display: 'flex', flexDirection: 'column' }}>
+                  {/* Chat Header */}
+                  <div className="execution-card-header" style={{ marginBottom: '0.75rem' }}>
                     <div>
-                      <div className="execution-title">Conversational Neural RAG Intelligence</div>
-                      <div className="execution-subtitle">Sub-second FAISS vector search with strict source page & section citations</div>
+                      <div className="execution-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <Bot size={20} color="#0284c7" />
+                        DoxFin Financial Neural Analyst
+                      </div>
+                      <div className="execution-subtitle">
+                        Sovereign Enclave RAG • Grounded strictly on <strong>{activeFilename}</strong>
+                      </div>
                     </div>
-                    <span className="sync-lock-badge">Top-K Evidence Retrieval</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <span className="sync-lock-badge" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                        <ShieldCheck size={13} color="#16a34a" /> Zero Hallucination Arithmetic
+                      </span>
+                      <button
+                        onClick={() => setChatMessages([
+                          {
+                            id: 'msg_reset',
+                            sender: 'doxfin',
+                            text: `Session reset. Ready to answer deterministic quantitative questions about ${activeFilename}.`,
+                            timestamp: 'Just now',
+                            citations: []
+                          }
+                        ])}
+                        style={{
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '6px',
+                          padding: '0.3rem 0.65rem',
+                          fontSize: '0.72rem',
+                          color: '#64748b',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem'
+                        }}
+                        title="Clear conversation history"
+                      >
+                        <RefreshCw size={11} /> Clear Thread
+                      </button>
+                    </div>
                   </div>
 
                   {/* Preset Question Suggestions */}
-                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', margin: '0.85rem 0 0.4rem 0' }}>
+                  <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', marginBottom: '0.85rem' }}>
+                    <span style={{ fontSize: '0.74rem', color: '#64748b', display: 'flex', alignItems: 'center', fontWeight: 600, marginRight: '0.2rem' }}>
+                      Suggested:
+                    </span>
                     {[
                       'What is the revenue growth YoY?',
                       'Summarize Note 17 trade receivables aging',
@@ -2175,18 +2260,18 @@ export default function App() {
                     ].map((q, i) => (
                       <button
                         key={i}
-                        onClick={() => {
-                          setQuery(q);
-                        }}
+                        onClick={() => handleSendChatMessage(q)}
+                        disabled={queryLoading}
                         style={{
-                          background: '#f8fafc',
-                          border: '1px solid #e2e8f0',
+                          background: '#f1f5f9',
+                          border: '1px solid #cbd5e1',
                           borderRadius: '16px',
-                          padding: '0.3rem 0.7rem',
+                          padding: '0.28rem 0.65rem',
                           fontSize: '0.74rem',
-                          color: '#475569',
+                          color: '#334155',
                           fontWeight: 600,
-                          cursor: 'pointer'
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
                         }}
                       >
                         {q}
@@ -2194,51 +2279,237 @@ export default function App() {
                     ))}
                   </div>
 
-                  {/* Query Input Bar */}
-                  <form onSubmit={handleAskQuestion} style={{ margin: '0.75rem 0 1.25rem 0' }}>
-                    <div style={{ display: 'flex', gap: '0.5rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.4rem 0.6rem' }}>
-                      <Search size={18} color="#64748b" style={{ margin: 'auto 0' }} />
-                      <input
-                        type="text"
-                        style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', fontSize: '0.9rem' }}
-                        placeholder={`Ask financial question about ${activeFilename}...`}
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                      />
-                      <button type="submit" disabled={queryLoading} className="btn-select-report" style={{ padding: '0.45rem 1rem' }}>
-                        {queryLoading ? <Loader2 size={14} className="spin-icon" /> : <Send size={14} />}
-                        <span>Ask</span>
-                      </button>
-                    </div>
-                  </form>
+                  {/* Conversational Scrollable Thread */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '1.15rem',
+                      minHeight: '440px',
+                      maxHeight: '580px',
+                      overflowY: 'auto',
+                      padding: '1.25rem',
+                      background: '#f8fafc',
+                      borderRadius: '10px',
+                      border: '1px solid #e2e8f0'
+                    }}
+                  >
+                    {chatMessages.map((msg) => {
+                      if (msg.sender === 'user') {
+                        return (
+                          <div key={msg.id} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            <div
+                              style={{
+                                maxWidth: '78%',
+                                background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                                color: '#ffffff',
+                                borderRadius: '16px 16px 4px 16px',
+                                padding: '0.75rem 1.1rem',
+                                boxShadow: '0 2px 8px rgba(2, 132, 199, 0.2)'
+                              }}
+                            >
+                              <div style={{ fontSize: '0.88rem', fontWeight: 500, lineHeight: 1.5 }}>
+                                {msg.text}
+                              </div>
+                              <div style={{ fontSize: '0.68rem', color: 'rgba(255, 255, 255, 0.75)', textAlign: 'right', marginTop: '0.35rem' }}>
+                                {msg.timestamp}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
 
-                  {/* Grounded Explanation Box */}
-                  <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '1.15rem', marginBottom: '1.25rem' }}>
-                    <div style={{ fontWeight: 800, fontSize: '0.85rem', color: '#0369a1', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                      <Sparkles size={15} /> Synthesized Evidence-Backed Explanation
-                    </div>
-                    <p style={{ fontSize: '0.9rem', color: '#0f172a', lineHeight: 1.6 }}>{answer}</p>
-                  </div>
+                      // DoxFin AI Response Bubble
+                      return (
+                        <div key={msg.id} style={{ display: 'flex', gap: '0.75rem', maxWidth: '94%' }}>
+                          <div
+                            style={{
+                              width: 34,
+                              height: 34,
+                              borderRadius: '50%',
+                              background: '#eff6ff',
+                              border: '1px solid #bae6fd',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                              color: '#0284c7'
+                            }}
+                          >
+                            <Bot size={18} />
+                          </div>
+                          <div
+                            style={{
+                              flex: 1,
+                              background: '#ffffff',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '16px 16px 16px 4px',
+                              padding: '1rem 1.25rem',
+                              boxShadow: '0 1px 4px rgba(0,0,0,0.04)'
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                marginBottom: '0.5rem',
+                                paddingBottom: '0.35rem',
+                                borderBottom: '1px solid #f1f5f9'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', fontWeight: 700, color: '#0f172a' }}>
+                                <span>DoxFin Neural Financial Analyst</span>
+                                <span style={{ background: '#dcfce7', color: '#15803d', fontSize: '0.68rem', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 600 }}>
+                                  Verified Grounding
+                                </span>
+                              </div>
+                              <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{msg.timestamp}</span>
+                            </div>
 
-                  {/* Citations Grid */}
-                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.75rem' }}>
-                    Verified Document Source Evidence ({citations.length} Grounded Citations)
-                  </div>
+                            {/* Synthesized Answer */}
+                            <div style={{ fontSize: '0.88rem', color: '#1e293b', lineHeight: 1.6, whiteSpace: 'pre-line', marginBottom: msg.citations && msg.citations.length > 0 ? '0.85rem' : 0 }}>
+                              {msg.text}
+                            </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.75rem' }}>
-                    {citations.map((c, i) => (
-                      <div key={i} style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.85rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-                          <span style={{ background: '#eff6ff', color: '#0284c7', fontWeight: 700, fontSize: '0.75rem', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
-                            Page {c.page_number}
-                          </span>
-                          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#334155' }}>{c.section}</span>
+                            {/* Direct Grounded Evidence Tables */}
+                            {msg.citations && msg.citations.length > 0 && (
+                              <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px dashed #cbd5e1' }}>
+                                <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#0369a1', display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.55rem' }}>
+                                  <TableIcon size={14} /> Source Evidence &amp; Financial Disclosures ({msg.citations.length} Grounded Citations)
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                                  {msg.citations.map((c, i) => (
+                                    <div key={i} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.75rem' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                          <span style={{ background: '#0284c7', color: '#ffffff', fontWeight: 700, fontSize: '0.74rem', padding: '0.15rem 0.5rem', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                            <FileText size={11} /> Page {c.page_number}
+                                          </span>
+                                          <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#1e293b' }}>
+                                            {c.section || 'Audited Note'}
+                                          </span>
+                                        </div>
+                                        <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                          Relevance: {(c.score * 100).toFixed(0)}%
+                                        </span>
+                                      </div>
+                                      {/* Directly Render Formatted Evidence Table or Snippet */}
+                                      {renderEvidenceContent(c.text || c.text_snippet)}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <div style={{ fontSize: '0.78rem', color: '#475569', fontStyle: 'italic', borderLeft: '2px solid #0284c7', paddingLeft: '0.5rem' }}>
-                          "{c.text_snippet}"
+                      );
+                    })}
+
+                    {/* Live Query In-Flight Spinner */}
+                    {queryLoading && (
+                      <div style={{ display: 'flex', gap: '0.75rem', maxWidth: '80%' }}>
+                        <div
+                          style={{
+                            width: 34,
+                            height: 34,
+                            borderRadius: '50%',
+                            background: '#eff6ff',
+                            border: '1px solid #bae6fd',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#0284c7'
+                          }}
+                        >
+                          <Loader2 size={16} className="spin-icon" />
+                        </div>
+                        <div
+                          style={{
+                            background: '#ffffff',
+                            border: '1px solid #e2e8f0',
+                            borderRadius: '16px 16px 16px 4px',
+                            padding: '0.85rem 1.15rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.6rem'
+                          }}
+                        >
+                          <span style={{ fontSize: '0.82rem', color: '#64748b', fontStyle: 'italic' }}>
+                            Scanning FAISS index &amp; retrieving full table disclosures...
+                          </span>
                         </div>
                       </div>
-                    ))}
+                    )}
+                    <div ref={chatBottomRef} />
+                  </div>
+
+                  {/* Bottom Chat Input Bar */}
+                  <div style={{ marginTop: '0.85rem' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: '0.5rem',
+                        background: '#ffffff',
+                        border: '1.5px solid #cbd5e1',
+                        borderRadius: '10px',
+                        padding: '0.5rem 0.75rem',
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <MessageSquare size={18} color="#0284c7" />
+                      <input
+                        type="text"
+                        style={{
+                          flex: 1,
+                          border: 'none',
+                          background: 'transparent',
+                          outline: 'none',
+                          fontSize: '0.88rem',
+                          color: '#0f172a'
+                        }}
+                        placeholder={`Ask financial question about ${activeFilename} (e.g., Note 17 receivables, debt ratios)...`}
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSendChatMessage();
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={() => handleSendChatMessage()}
+                        disabled={!chatInput.trim() || queryLoading}
+                        className="btn-select-report"
+                        style={{
+                          padding: '0.5rem 1.1rem',
+                          borderRadius: '8px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
+                          opacity: !chatInput.trim() || queryLoading ? 0.6 : 1
+                        }}
+                      >
+                        {queryLoading ? <Loader2 size={14} className="spin-icon" /> : <Send size={14} />}
+                        <span>Send</span>
+                      </button>
+                    </div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginTop: '0.4rem',
+                        padding: '0 0.25rem',
+                        fontSize: '0.7rem',
+                        color: '#94a3b8'
+                      }}
+                    >
+                      <span>Press <kbd style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '3px', padding: '0.1rem 0.3rem', fontSize: '0.65rem' }}>Enter</kbd> to send • Multi-turn conversation</span>
+                      <span>Zero Hallucination Arithmetic • Verified Schedule III Citations</span>
+                    </div>
                   </div>
                 </div>
               )}

@@ -43,7 +43,7 @@ class GraniteService:
         self,
         system_prompt: str,
         user_prompt: str,
-        max_new_tokens: int = 300
+        max_new_tokens: int = 700
     ) -> str:
         messages = [
             {

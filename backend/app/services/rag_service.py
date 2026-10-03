@@ -135,19 +135,21 @@ def format_rag_prompt_for_granite(
     for chunk in retrieved_chunks:
         page = chunk.get("page_number", 1)
         sec = chunk.get("section", "Disclosure")
+        src_type = chunk.get("source_type", "text")
         text = chunk.get("text", "").strip()
-        chunk_lines.append(f"[Page {page} - {sec}]\n{text}")
+        type_tag = " [FINANCIAL TABLE]" if src_type == "table" or "|" in text else ""
+        chunk_lines.append(f"[Page {page} - {sec}{type_tag}]\n{text}")
     evidence_block += "\n\n".join(chunk_lines)
 
-    user_prompt = f"""USER QUESTION
-
+    user_prompt = f"""USER QUESTION:
 {query}
-
 
 {metrics_block}{evidence_block}
 
-
-Answer the user's question using only the supplied evidence and verified financial metrics."""
+INSTRUCTIONS:
+1. Answer the user's question directly, clearly, and thoroughly using only the supplied document evidence and verified financial metrics.
+2. When answering about financial statements, aging schedules, or breakdowns from tables, extract and report all pertinent numbers completely without skipping categories.
+3. Cite the exact page number(s) where the evidence was found (e.g. Page {retrieved_chunks[0].get('page_number', 1) if retrieved_chunks else 1})."""
     return user_prompt
 
 
@@ -184,7 +186,7 @@ class RAGService:
         cls,
         query: str,
         faiss_store: FaissStore,
-        top_k: int = 5,
+        top_k: int = 8,
         llm_fn: Optional[Callable[[str], str]] = None,
         min_threshold: float = MIN_EVIDENCE_THRESHOLD,
         verified_metrics: Optional[List[Dict[str, Any]]] = None
@@ -200,9 +202,11 @@ class RAGService:
             {
                 "page_number": c["page_number"],
                 "section": c["section"],
-                "chunk_id": c["chunk_id"],
-                "score": round(float(c["score"]), 4),
-                "text_snippet": c["text"][:160] + ("..." if len(c["text"]) > 160 else "")
+                "chunk_id": c.get("chunk_id"),
+                "score": round(float(c.get("score", 0.0)), 4),
+                "source_type": c.get("source_type", "table" if "|" in c.get("text", "") else "general_text"),
+                "text": c.get("text", ""),
+                "text_snippet": c.get("text", "")
             }
             for c in chunks
         ]

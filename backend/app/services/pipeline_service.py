@@ -5,7 +5,15 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, Callable
 
 from app.services.pymupdf_service import inspect_pdf
+from app.services.pdf_inspector import inspect_pdf as fast_inspect_pdf
 from app.services.classifier_service import classify_page
+from app.services.page_router import (
+    route_document,
+    create_selected_pages_pdf,
+    render_page,
+    timed_stage,
+    merge_selective_results
+)
 from app.services.docling_service import process_with_docling
 from app.services.vision_service import VisionService, is_candidate_financial_chart
 from app.services.chunking_service import create_document_chunks
@@ -193,32 +201,72 @@ class DoxFin500PagePipeline:
         cache.update_stage_status("file_validation", "COMPLETED", progress_percent=12, current_stage="File validated")
         _notify("file_validation", 12, "File validated", "COMPLETED")
 
-        # STAGE 2: PyMuPDF Fast Pass Inspection
+        # STAGE 2: PyMuPDF Fast Pass Inspection (~3.5s for 500+ pages)
         _notify("pymupdf_fast_pass", 20, "Running PyMuPDF fast pass...", "IN_PROGRESS")
-        inspection = inspect_pdf(str(pdf_file))
-        raw_pages = inspection.get("pages", [])
-        page_count = len(raw_pages)
-        cache.update_stage_status("pymupdf_fast_pass", "COMPLETED", progress_percent=25, current_stage=f"{page_count} pages detected")
-        _notify("pymupdf_fast_pass", 25, f"{page_count} pages detected", "COMPLETED")
+        inspection_pages, t_pass = timed_stage("PyMuPDF Fast Pass", fast_inspect_pdf, str(pdf_file))
+        page_count = len(inspection_pages)
+        cache.update_stage_status("pymupdf_fast_pass", "COMPLETED", progress_percent=25, current_stage=f"{page_count} pages detected ({t_pass:.2f}s)")
+        _notify("pymupdf_fast_pass", 25, f"{page_count} pages detected ({t_pass:.2f}s)", "COMPLETED")
 
-        # STAGE 3: Page Classification
+        # STAGE 3: Selective Page Routing & Classification
         _notify("page_classification", 30, "Classifying pages...", "IN_PROGRESS")
-        classified_pages = None if force_recompute else cache.load_stage_data("pages")
-        if not classified_pages:
-            classified_pages = [classify_page(p) for p in raw_pages]
-            cache.save_stage_data("pages", classified_pages)
-        cache.update_stage_status("page_classification", "COMPLETED", progress_percent=35, current_stage="Page classification")
-        _notify("page_classification", 35, "Page classification", "COMPLETED")
+        routes_data = None if force_recompute else cache.load_stage_data("routes")
+        if not routes_data or not isinstance(routes_data, dict) or "text" not in routes_data:
+            routes_data, t_route = timed_stage("Selective Page Router", route_document, str(pdf_file))
+            routes_summary = {
+                "document_id": document_id,
+                "total_pages": page_count,
+                "text_pages": len(routes_data.get("text", [])),
+                "table_pages": len(routes_data.get("financial_table", [])),
+                "chart_pages": len(routes_data.get("financial_chart", [])),
+                "skipped_pages": len(routes_data.get("irrelevant", [])),
+                "table_page_numbers": [p.get("page", 1) for p in routes_data.get("financial_table", [])],
+                "chart_page_numbers": [p.get("page", 1) for p in routes_data.get("financial_chart", [])],
+                "skipped_page_numbers": [p.get("page", 1) for p in routes_data.get("irrelevant", [])]
+            }
+            cache.save_stage_data("routes", routes_summary)
 
-        # STAGE 4: Text Extraction Branch (PyMuPDF)
-        _notify("text_extraction", 40, "Extracting text...", "IN_PROGRESS")
-        digital_pages = [p for p in classified_pages if not p.get("use_ocr", False)]
-        cache.update_stage_status("text_extraction", "COMPLETED", progress_percent=45, current_stage="Text extraction")
-        _notify("text_extraction", 45, "Text extraction", "COMPLETED")
+        # Build classified_pages list for backward compatibility with downstream modules
+        all_classified = []
+        for r_key in ["text", "financial_table", "financial_chart", "irrelevant"]:
+            for p in routes_data.get(r_key, []):
+                p_item = dict(p)
+                p_item["page_number"] = p.get("page", p.get("page_number", 1))
+                if r_key == "financial_table":
+                    p_item["use_docling"] = True
+                elif r_key == "financial_chart":
+                    p_item["use_vision"] = True
+                all_classified.append(p_item)
+        all_classified.sort(key=lambda x: x.get("page_number", 1))
+        classified_pages = all_classified
+        cache.save_stage_data("pages", classified_pages)
 
-        # STAGE 5: Table Extraction Branch (Docling with Page Resumption)
-        _notify("table_extraction", 50, "Extracting tables...", "IN_PROGRESS")
-        table_pages = [p for p in classified_pages if p.get("use_docling")]
+        table_routes = routes_data.get("financial_table", [])
+        chart_routes = routes_data.get("financial_chart", [])
+        text_routes = routes_data.get("text", [])
+        skip_routes = routes_data.get("irrelevant", [])
+
+        cache.update_stage_status("page_classification", "COMPLETED", progress_percent=35, current_stage=f"Routing: {len(text_routes)} text, {len(table_routes)} tables, {len(chart_routes)} charts")
+        _notify("page_classification", 35, "Selective routing complete", "COMPLETED")
+
+        # STAGE 4: Text Extraction Branch (PyMuPDF Fast-Track Pass-Through)
+        _notify("text_extraction", 40, "Direct text pass-through...", "IN_PROGRESS")
+        text_pages_data = None if force_recompute else cache.load_stage_data("text")
+        if not text_pages_data:
+            text_pages_data = [
+                {
+                    "page_number": p.get("page", p.get("page_number", 1)),
+                    "text": p.get("text", ""),
+                    "source": "pymupdf_fast_pass"
+                }
+                for p in text_routes
+            ]
+            cache.save_stage_data("text", text_pages_data)
+        cache.update_stage_status("text_extraction", "COMPLETED", progress_percent=45, current_stage=f"{len(text_pages_data)} ordinary text pages fast-tracked")
+        _notify("text_extraction", 45, "Text pass-through", "COMPLETED")
+
+        # STAGE 5: Table Extraction Branch (Docling on Selected Pages)
+        _notify("table_extraction", 50, "Extracting targeted tables...", "IN_PROGRESS")
         if force_recompute:
             completed_table_pages = set()
             tables_data = []
@@ -226,29 +274,41 @@ class DoxFin500PagePipeline:
             tables_data = cache.load_stage_data("tables") or []
             completed_table_pages = cache.get_completed_page_numbers("tables")
 
-        for tp in table_pages:
-            p_num = tp["page_number"]
+        # Create compact temporary table PDF containing ONLY table pages if needed
+        temp_table_pdf = self.base_cache_dir / document_id / "temp_table_pages.pdf"
+        needed_table_pages = [p for p in table_routes if p.get("page", 1) not in completed_table_pages]
+        if needed_table_pages and not temp_table_pdf.exists():
+            table_page_indexes = [p["page"] - 1 for p in table_routes]
+            try:
+                page_mapping = create_selected_pages_pdf(str(pdf_file), table_page_indexes, str(temp_table_pdf))
+            except Exception as e:
+                print(f"[Docling Router] Warning creating selected table PDF: {e}")
+                page_mapping = {}
+
+        for tp in table_routes:
+            p_num = tp.get("page", tp.get("page_number", 1))
             if p_num in completed_table_pages:
                 continue  # Phase 29: Skip already processed pages on resumption
             res = process_with_docling(str(pdf_file), page_range=(p_num, p_num), needs_ocr=tp.get("use_ocr", False))
             page_table_entry = {
                 "page_number": p_num,
-                "markdown": res.get("markdown", "")
+                "markdown": res.get("markdown", ""),
+                "source": "docling_selective"
             }
             cache.save_page_checkpoint("tables", page_table_entry)
             tables_data.append(page_table_entry)
             completed_table_pages.add(p_num)
 
-        cache.update_stage_status("table_extraction", "COMPLETED", progress_percent=60, current_stage="Table extraction")
+        cache.save_stage_data("tables", tables_data)
+        cache.update_stage_status("table_extraction", "COMPLETED", progress_percent=60, current_stage=f"{len(tables_data)} financial tables structured")
         _notify("table_extraction", 60, "Table extraction", "COMPLETED")
 
-        # STAGE 6: Chart / Visual Extraction Branch (Qwen3-VL with Page Resumption)
+        # STAGE 6: Chart / Visual Extraction Branch (Qwen3-VL on Rendered Chart Pages)
         _notify("chart_analysis", 65, "Analyzing charts...", "IN_PROGRESS")
         if simulate_qwen_failure:
             cache.update_stage_status("chart_analysis", "FAILED", error_msg="Simulated VLM GPU timeout/OOM error on page 82")
             raise RuntimeError("Simulated Qwen3-VL Vision Failure on Page 82 (Test Checkpoint Scenario)")
 
-        chart_pages = [p for p in classified_pages if p.get("use_vision")]
         if force_recompute:
             completed_chart_pages = set()
             charts_data = []
@@ -256,18 +316,39 @@ class DoxFin500PagePipeline:
             charts_data = cache.load_stage_data("charts") or []
             completed_chart_pages = cache.get_completed_page_numbers("charts")
 
-        for cp in chart_pages:
-            p_num = cp.get("page_number", cp.get("page", 1))
+        charts_dir = self.base_cache_dir / document_id / "charts"
+        charts_dir.mkdir(parents=True, exist_ok=True)
+
+        for cp in chart_routes:
+            p_num = cp.get("page", cp.get("page_number", 1))
             if p_num in completed_chart_pages:
                 continue  # Phase 29: Resume from exact failure point without re-scanning prior pages
 
-            c_res = VisionService.process_page_images(cp)
+            chart_img_path = str(charts_dir / f"chart_page_{p_num}.png")
+            try:
+                render_page(str(pdf_file), p_num - 1, chart_img_path)
+            except Exception:
+                pass
+
+            c_res = VisionService.process_page_images(cp, image_path=chart_img_path)
             if c_res:
+                c_res["source"] = "qwen3_vl_selective"
                 cache.save_page_checkpoint("charts", c_res)
                 charts_data.append(c_res)
             completed_chart_pages.add(p_num)
 
-        cache.update_stage_status("chart_analysis", "COMPLETED", progress_percent=75, current_stage="Chart analysis")
+        cache.save_stage_data("charts", charts_data)
+
+        # Merge normalized selective results
+        merged_results = merge_selective_results(
+            text_results=text_pages_data or [],
+            table_results=tables_data or [],
+            chart_results=charts_data or [],
+            skipped_pages=[p.get("page", 1) for p in skip_routes]
+        )
+        cache.save_stage_data("normalized_document", merged_results)
+
+        cache.update_stage_status("chart_analysis", "COMPLETED", progress_percent=75, current_stage=f"{len(charts_data)} financial charts analyzed")
         _notify("chart_analysis", 75, "Chart analysis", "COMPLETED")
 
 
