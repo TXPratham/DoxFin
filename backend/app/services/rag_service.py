@@ -13,9 +13,9 @@ from app.services.embedding_service import create_embeddings
 from app.services.faiss_service import FaissStore, load_document_store
 
 # Minimum FAISS cosine similarity / dot product threshold for evidence sufficiency
-MIN_EVIDENCE_THRESHOLD = 0.20
+MIN_EVIDENCE_THRESHOLD = 0.38
 
-# Strict Fallback Phrase required by Phase 34
+# Strict Fallback Phrase required by Phase 34 & Step 9/10
 INSUFFICIENT_EVIDENCE_MESSAGE = "The uploaded report does not provide sufficient evidence to answer this question."
 
 
@@ -56,23 +56,44 @@ def is_evidence_sufficient(
 ) -> Tuple[bool, str]:
     """
     Phase 34 Evidence Sufficiency Gate:
-    Determines if retrieved evidence is adequate to answer the question.
+    Determines if retrieved evidence is adequate to answer the question deterministically before calling LLM.
     """
     if not retrieved_chunks:
         return False, "No chunks retrieved from vector store."
 
     top_score = max((c.get("score", 0.0) for c in retrieved_chunks), default=0.0)
 
-    # Check for specific out-of-scope year queries (e.g. 1982, 2035, 2040)
+    # 1. Check for specific queried years (e.g. 1982, 2035, 2040)
     queried_years = re.findall(r"\b(19\d\d|20[3-9]\d)\b", query)
     if queried_years:
         chunk_texts = " ".join([c.get("text", "") for c in retrieved_chunks])
         if not any(yr in chunk_texts for yr in queried_years):
             return False, f"Query asks about year {queried_years[0]} not found in document context."
 
-
+    # 2. Score threshold check
     if top_score < threshold:
         return False, f"Top relevance score ({top_score:.4f}) is below confidence threshold ({threshold:.4f})."
+
+    # 3. Key entity / subject presence check
+    # Stop words to ignore when extracting salient terms from the query
+    stop_words = {
+        "what", "why", "how", "when", "where", "which", "who", "whom", "whose",
+        "did", "does", "do", "is", "are", "was", "were", "has", "have", "had",
+        "the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "from",
+        "by", "with", "about", "during", "of", "company", "explain", "describe",
+        "give", "tell", "detail", "details", "show", "summarize", "analyze"
+    }
+    raw_terms = re.findall(r"[a-zA-Z]{3,}", query.lower())
+    query_keywords = [t for t in raw_terms if t not in stop_words]
+
+    if query_keywords:
+        all_chunk_text = " ".join([c.get("text", "").lower() for c in retrieved_chunks])
+        # Find if at least one meaningful keyword/stem is present in the retrieved chunks
+        matched_keywords = [kw for kw in query_keywords if kw in all_chunk_text or any(kw.rstrip('s') in word for word in all_chunk_text.split())]
+        
+        # If none of the specific query keywords are present anywhere in the retrieved chunks, reject
+        if not matched_keywords and top_score < 0.65:
+            return False, f"Core query topics ({', '.join(query_keywords[:3])}) not found in retrieved document evidence."
 
     return True, "Sufficient evidence available."
 
@@ -91,6 +112,43 @@ def format_context_for_llm(retrieved_chunks: List[Dict[str, Any]]) -> str:
         context_blocks.append(block)
 
     return "\n\n---\n\n".join(context_blocks)
+
+
+def format_rag_prompt_for_granite(
+    query: str,
+    retrieved_chunks: List[Dict[str, Any]],
+    verified_metrics: Optional[List[Dict[str, Any]]] = None
+) -> str:
+    """Format query, verified financial metrics, and retrieved evidence chunks for Granite 4.0 1B."""
+    metrics_block = ""
+    if verified_metrics:
+        lines = []
+        for m in verified_metrics:
+            name = m.get("metric_name", "Metric")
+            val = m.get("value", "")
+            unit = m.get("unit", "")
+            lines.append(f"{name}: {val}{unit}")
+        metrics_block = "VERIFIED FINANCIAL METRICS\n\n" + "\n".join(lines) + "\n\n"
+
+    evidence_block = "DOCUMENT EVIDENCE\n\n"
+    chunk_lines = []
+    for chunk in retrieved_chunks:
+        page = chunk.get("page_number", 1)
+        sec = chunk.get("section", "Disclosure")
+        text = chunk.get("text", "").strip()
+        chunk_lines.append(f"[Page {page} - {sec}]\n{text}")
+    evidence_block += "\n\n".join(chunk_lines)
+
+    user_prompt = f"""USER QUESTION
+
+{query}
+
+
+{metrics_block}{evidence_block}
+
+
+Answer the user's question using only the supplied evidence and verified financial metrics."""
+    return user_prompt
 
 
 def build_rag_prompt(query: str, retrieved_chunks: List[Dict[str, Any]]) -> str:
@@ -128,11 +186,12 @@ class RAGService:
         faiss_store: FaissStore,
         top_k: int = 5,
         llm_fn: Optional[Callable[[str], str]] = None,
-        min_threshold: float = MIN_EVIDENCE_THRESHOLD
+        min_threshold: float = MIN_EVIDENCE_THRESHOLD,
+        verified_metrics: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         Execute full RAG flow with Phase 34 Evidence Sufficiency Verification:
-        Question -> Embedding -> FAISS retrieval -> Evidence Check -> Context Assembly -> LLM Explanation.
+        Question -> Embedding -> FAISS retrieval -> Evidence Check -> Context Assembly -> Granite Explanation.
         """
         chunks = retrieve_context(query, faiss_store, top_k=top_k)
         has_evidence, reason = is_evidence_sufficient(query, chunks, threshold=min_threshold)
@@ -166,14 +225,22 @@ class RAGService:
         if llm_fn is not None:
             answer = llm_fn(prompt)
         else:
-            # Deterministic evidence synthesizer grounded strictly in top source
-            top_source = chunks[0] if chunks else {}
-            citations_summary = ", ".join([f"Page {c['page_number']} ({c['section']})" for c in chunks[:3]])
-            answer = (
-                f"Based on referenced disclosures from {citations_summary}: "
-                f"{top_source.get('text', '')[:200]}... "
-                f"(Page {top_source.get('page_number', 1)}, {top_source.get('section', 'General')})."
-            )
+            try:
+                from app.services.granite_service import get_granite_service
+                from app.prompts.financial_qa import DOXFIN_SYSTEM_PROMPT
+
+                granite = get_granite_service()
+                granite_prompt = format_rag_prompt_for_granite(query, chunks, verified_metrics=verified_metrics)
+                answer = granite.generate(system_prompt=DOXFIN_SYSTEM_PROMPT, user_prompt=granite_prompt)
+            except Exception as exc:
+                # Deterministic evidence synthesizer fallback if LLM is offline
+                top_source = chunks[0] if chunks else {}
+                citations_summary = ", ".join([f"Page {c['page_number']} ({c['section']})" for c in chunks[:3]])
+                answer = (
+                    f"Based on referenced disclosures from {citations_summary}: "
+                    f"{top_source.get('text', '')[:200]}... "
+                    f"(Page {top_source.get('page_number', 1)}, {top_source.get('section', 'General')})."
+                )
 
         return {
             "query": query,
@@ -194,7 +261,8 @@ class RAGService:
         vector_store_dir: str = "vector_store",
         top_k: int = 5,
         llm_fn: Optional[Callable[[str], str]] = None,
-        min_threshold: float = MIN_EVIDENCE_THRESHOLD
+        min_threshold: float = MIN_EVIDENCE_THRESHOLD,
+        verified_metrics: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """Load index from vector_store and execute RAG query."""
         store = load_document_store(doc_id=doc_id, vector_store_dir=vector_store_dir)
@@ -203,7 +271,8 @@ class RAGService:
             faiss_store=store,
             top_k=top_k,
             llm_fn=llm_fn,
-            min_threshold=min_threshold
+            min_threshold=min_threshold,
+            verified_metrics=verified_metrics
         )
 
     @classmethod

@@ -11,10 +11,16 @@ FINANCIAL_KEYWORDS = [
     "borrowings",
     "debt",
     "receivables",
+    "payables",
     "expenses",
+    "tax",
+    "taxation",
+    "income tax",
+    "depreciation",
     "ebitda",
     "segment",
-    "operating margin"
+    "operating margin",
+    "working capital"
 ]
 
 

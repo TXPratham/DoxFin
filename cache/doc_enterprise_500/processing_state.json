@@ -1,0 +1,20 @@
+{
+  "document_id": "doc_enterprise_500",
+  "progress_percent": 45,
+  "current_stage": "Text extraction",
+  "created_at": "2026-10-03T01:40:26.267267",
+  "last_updated": "2026-10-03T01:45:07.288999",
+  "stages": {
+    "file_validation": "COMPLETED",
+    "pymupdf_fast_pass": "COMPLETED",
+    "page_classification": "COMPLETED",
+    "text_extraction": "COMPLETED",
+    "table_extraction": "PENDING",
+    "chart_analysis": "PENDING",
+    "financial_calculations": "PENDING",
+    "anomaly_detection": "PENDING",
+    "rag_indexing": "PENDING",
+    "metadata": "COMPLETED",
+    "pages": "COMPLETED"
+  }
+}

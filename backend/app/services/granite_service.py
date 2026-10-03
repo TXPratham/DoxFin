@@ -23,7 +23,7 @@ class GraniteService:
         )
 
         if torch.cuda.is_available():
-            dtype = torch.float16
+            dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
             device_map = "cuda"
         else:
             dtype = torch.float32
@@ -37,7 +37,7 @@ class GraniteService:
         )
 
         self.model.eval()
-        print(f"IBM Granite loaded successfully on device: {self.model.device}")
+        print(f"IBM Granite loaded successfully on device: {self.model.device} (dtype: {dtype})")
 
     def generate(
         self,
@@ -74,7 +74,8 @@ class GraniteService:
             outputs = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
-                do_sample=False
+                do_sample=False,
+                pad_token_id=self.tokenizer.eos_token_id
             )
 
         input_length = inputs["input_ids"].shape[-1]

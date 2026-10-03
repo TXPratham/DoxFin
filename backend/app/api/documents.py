@@ -437,11 +437,19 @@ def query_document(
     Query the document via local FAISS RAG. Requires ANALYZE permissions.
     """
     try:
+        # Fetch verified deterministic financial metrics for this document
+        metrics_db = db.query(FinancialMetric).filter(FinancialMetric.document_id == document_id).all()
+        verified_metrics = [
+            {"metric_name": m.metric_name, "value": m.value, "unit": m.unit or "%"}
+            for m in metrics_db
+        ] if metrics_db else None
+
         rag_res = RAGService.query_by_doc_id(
             query=payload.query,
             doc_id=document_id,
             vector_store_dir=str(VECTOR_STORE_DIR),
-            top_k=payload.top_k
+            top_k=payload.top_k,
+            verified_metrics=verified_metrics
         )
 
         citations = [
