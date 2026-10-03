@@ -134,7 +134,6 @@ class SecurityService:
             clean_pages=True,
             embedded_files=True,
             javascript=True,
-            links=False,
             reset_fields=False,
             thumbnails=True,
             xml_metadata=True

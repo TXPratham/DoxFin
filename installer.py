@@ -10,9 +10,20 @@ import shutil
 import sqlite3
 from pathlib import Path
 
+# Ensure UTF-8 output on Windows consoles
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 BASE_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = BASE_DIR / "backend"
 FRONTEND_DIR = BASE_DIR / "frontend"
+
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 
 STORAGE_DIRS = [
     BACKEND_DIR / "uploads",
@@ -47,8 +58,10 @@ def step_2_verify_dependencies():
 def step_3_init_database():
     print_step(3, "Initializing Relational Database Schema")
     try:
-        sys.path.insert(0, str(BACKEND_DIR))
-        from app.database.database import init_db
+        try:
+            from backend.app.database.database import init_db
+        except ImportError:
+            from app.database.database import init_db
         init_db()
         print("  ✓ Database schema created and verified.")
     except Exception as e:

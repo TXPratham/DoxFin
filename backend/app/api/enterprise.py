@@ -176,6 +176,28 @@ def get_production_system_matrix():
     - Hardware Profile
     - Cryptographic Offline License
     """
+    lic_service = LicenseService()
+    lic_info = lic_service.get_license_info()
+    hw_config = HardwareService.get_execution_mode_config()
+
+    return {
+        "system_status": "ONLINE",
+        "timestamp": datetime.utcnow().isoformat(),
+        "pipeline_subsystems": {
+            "fastapi_host": "ONLINE",
+            "pymupdf_fast_pass": "ONLINE",
+            "docling_table_parser": "ONLINE",
+            "vision_backend": f"ONLINE ({hw_config.get('vision_model', 'Qwen2.5-VL-3B')})",
+            "deterministic_financial_engine": "ONLINE",
+            "database_storage": "ONLINE",
+            "faiss_vector_store": "ONLINE",
+            "local_llm_rag": "ONLINE (IBM Granite 4.0 1B)"
+        },
+        "hardware": hw_config,
+        "license": lic_info
+    }
+
+
 # ==========================================
 # 4. HARDWARE PROFILING & QWEN MODEL SWITCHER
 # ==========================================
