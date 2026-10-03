@@ -1,1112 +1,475 @@
-# Project4
+# DoxFin: Enterprise Financial Document Intelligence Platform
+
+[![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?style=flat&logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![React 19](https://img.shields.io/badge/React-19.0-61DAFB?style=flat&logo=react&logoColor=black)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Vite](https://img.shields.io/badge/Vite-6.0-646CFF?style=flat&logo=vite&logoColor=white)](https://vitejs.dev)
+[![IBM Granite 4.0](https://img.shields.io/badge/LLM-IBM%20Granite%204.0%201B-1261FE?style=flat&logo=ibm&logoColor=white)](https://huggingface.co/ibm-granite)
+[![FAISS](https://img.shields.io/badge/Vector%20Search-FAISS-00599C?style=flat&logo=c%2B%2B&logoColor=white)](https://github.com/facebookresearch/faiss)
+[![Docker](https://img.shields.io/badge/Deployment-Docker%20%26%20Compose-2496ED?style=flat&logo=docker&logoColor=white)](https://www.docker.com)
+[![Compliance](https://img.shields.io/badge/Security-SOC2%20Type%20II%20Ready-success)](https://doxfin.internal)
+
+> **"Python calculates, RAG provides evidence, and the LLM explains."**  
+> DoxFin is an on-premise, privacy-first financial document intelligence platform engineered for credit rating agencies, institutional audit committees, and quantitative research desks. It ingests 500+ page annual filings, extracts complex tabular notes, deterministically calculates financial ratios, flags forensic accounting anomalies, and delivers grounded multi-turn conversational AI with exact page-level provenance.
+
+---
+
+## Table of Contents
+
+- [Core Principles & Architectural Highlights](#core-principles--architectural-highlights)
+- [System Architecture](#system-architecture)
+- [Hardware & Software Prerequisites](#hardware--software-prerequisites)
+- [Quickstart Installation Guide](#quickstart-installation-guide)
+  - [1. Clone Repository](#1-clone-repository)
+  - [2. Backend Setup (Python Virtual Environment)](#2-backend-setup-python-virtual-environment)
+  - [3. Frontend Setup (Node.js & Vite)](#3-frontend-setup-nodejs--vite)
+  - [4. Verify Local LLM Weights](#4-verify-local-llm-weights)
+- [Running DoxFin](#running-doxfin)
+  - [Method A: Local Dual-Terminal Run (Recommended for Dev)](#method-a-local-dual-terminal-run-recommended-for-dev)
+  - [Method B: Automated One-Command Installer](#method-b-automated-one-command-installer)
+  - [Method C: Docker & Docker Compose (Production On-Premise)](#method-c-docker--docker-compose-production-on-premise)
+- [Demo Credentials & Role-Based Access Control](#demo-credentials--role-based-access-control)
+- [Key Workflows & Feature Guide](#key-workflows--feature-guide)
+  - [PyMuPDF Fast Pass & Selective Page Router](#pymupdf-fast-pass--selective-page-router)
+  - [Conversational Neural Chat ("Ask DoxFin")](#conversational-neural-chat-ask-doxfin)
+  - [Deterministic Financial Ratio Engine](#deterministic-financial-ratio-engine)
+  - [Forensic Anomaly Detection](#forensic-anomaly-detection)
+  - [SOC2 Type II Audit Ledger](#soc2-type-ii-audit-ledger)
+- [Verification & Automated Test Suite](#verification--automated-test-suite)
+- [Environment Configuration & Variables](#environment-configuration--variables)
+- [Repository Structure](#repository-structure)
+- [Troubleshooting & FAQ](#troubleshooting--faq)
+- [Enterprise Disclaimer & Pilot Licensing](#enterprise-disclaimer--pilot-licensing)
+
+---
+
+## Core Principles & Architectural Highlights
+
+1. **Zero Hallucination Arithmetic:**  
+   Large Language Models are probabilistic and prone to math hallucinations. In DoxFin, **all financial math is executed in deterministic Python**. YoY growth rates, EBITDA, Net Profit Margin, Debt-to-Equity, Current Ratio, and Free Cash Flow are computed via formula engines with guaranteed 2-decimal rounding.
+2. **Selective Ingestion Pipeline (PyMuPDF Fast Pass):**  
+   Processing 500-page annual reports through brute-force vision models or Docling causes massive memory exhaustion and minutes of latency. DoxFin's two-stage scanner classifies every page in milliseconds:
+   - **Ordinary Text Pages** $\rightarrow$ Fast pass via PyMuPDF (near-instantaneous).
+   - **Financial Tables** $\rightarrow$ Docling table layout parsing & Schedule III normalization.
+   - **Important Financial Charts** $\rightarrow$ Targeted Qwen-VL multimodal analysis.
+   - **Decorative / Cover Pages** $\rightarrow$ Skipped entirely to conserve compute.
+3. **100% Air-Gapped Data Sovereignty:**  
+   Designed for confidential filings (M&A dossiers, unreleased quarterly results). DoxFin runs entirely offline using local **IBM Granite 4.0 1B** causal language models and local **FAISS CPU/GPU** vector stores. Zero external API calls, zero telemetry, zero data egress.
+4. **Direct Evidence Tables with Exact Page Badges:**  
+   Every RAG citation delivers the exact source page number (e.g. `Page 151: Note 17 Trade Receivables`) and renders structured Markdown tables directly as interactive, styled HTML tables.
+
+---
+
+## System Architecture
+
+```
+                    500-Page Annual Report (PDF)
+                                │
+                                ▼
+                   PyMuPDF Fast-Pass Scanner
+                    (~1.2s Optical Screening)
+                                │
+                                ▼
+                       Selective Page Router
+         ┌──────────────────────┼──────────────────────┐
+         ▼                      ▼                      ▼
+    [Normal Text]       [Financial Tables]     [Financial Charts]
+    PyMuPDF Passthrough       Docling               Qwen-VL
+         │                      │                      │
+         └──────────────────────┼──────────────────────┘
+                                │
+                                ▼
+                     Data Normalization Layer
+                                │
+         ┌──────────────────────┴──────────────────────┐
+         ▼                                             ▼
+  Python Financial Engine                     Semantic Chunking &
+  - Deterministic Ratios (2 dec)              FAISS Vector Indexing
+  - 18 Forensic Anomaly Rules                          │
+  - Ind AS / Schedule III Checks                       │
+         │                                             │
+         └──────────────────────┬──────────────────────┘
+                                │
+                                ▼
+                   IBM Granite 4.0 1B (Local)
+                   Evidence Synthesizer & RAG
+                                │
+                                ▼
+               DoxFin React 19 Neural Workspace
+     (Multi-Turn Chat • Direct Tables • Page Citations)
+```
 
-DoxFin
+---
 
-DoxFin is a privacy-first, multimodal financial document intelligence platform designed to analyze large financial reports, extract structured information, calculate financial metrics, detect unusual patterns, explain likely causes, and provide evidence-backed answers with source references.
+## Hardware & Software Prerequisites
 
-Core principle: Python calculates, RAG provides evidence, and the LLM explains.
+| Component | Minimum Specification | Recommended Specification |
+| :--- | :--- | :--- |
+| **Operating System** | Windows 10/11, Ubuntu 20.04+, macOS 12+ | Windows 11 / Ubuntu 22.04 LTS |
+| **Python** | Python 3.10 – 3.12 | **Python 3.11** |
+| **Node.js** | Node.js v18.0+ | **Node.js v20.x or v22.x** with npm 10+ |
+| **RAM** | 8 GB | **16 GB – 32 GB** |
+| **Processor** | 4-Core x86_64 / ARM64 | 8-Core (AVX-512 supported) |
+| **GPU (Optional)** | Not required (CPU mode supported) | NVIDIA RTX 3050+ (4GB+ VRAM, CUDA 12.x) |
+| **Disk Space** | 6 GB available (includes local Granite weights) | 15 GB NVMe SSD |
 
-1. Problem
+---
 
-Financial reports can be hundreds of pages long and contain financial statements, tables, notes, management discussion, risk disclosures, charts, graphs, images, earnings information, and segment information.
+## Quickstart Installation Guide
 
-DoxFin aims to convert complex financial documents into structured, searchable, and understandable financial intelligence.
+### 1. Clone Repository
 
-2. Main Goals
+```bash
+git clone https://github.com/your-org/DoxFin.git
+cd DoxFin
+```
 
-Upload and analyze financial reports and PDFs
+---
 
-Support large reports, including 400–500 pages
+### 2. Backend Setup (Python Virtual Environment)
 
-Extract text and financial tables
+It is strongly recommended to use a dedicated Python virtual environment.
 
-Understand relevant charts and graphs
+#### On Windows (PowerShell / Command Prompt):
+```powershell
+# 1. Create virtual environment
+python -m venv .venv
 
-Calculate financial ratios programmatically
+# 2. Activate virtual environment
+# In PowerShell:
+.\.venv\Scripts\Activate.ps1
+# (If script execution is blocked: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass)
 
-Detect financial anomalies
+# Or in Command Prompt:
+.\.venv\Scripts\activate.bat
 
-Investigate why anomalies occurred
+# 3. Upgrade pip and build tools
+python -m pip install --upgrade pip setuptools wheel
 
-Answer document-specific questions using RAG
+# 4. Install backend dependencies
+pip install -r backend/requirements.txt
+```
 
-Show evidence and source-page references
+#### On Linux / macOS (Bash / Zsh):
+```bash
+# 1. Create virtual environment
+python3 -m venv .venv
 
-Provide beginner-friendly explanations
+# 2. Activate virtual environment
+source .venv/bin/activate
 
-Support private and enterprise financial documents
+# 3. Upgrade pip
+pip install --upgrade pip setuptools wheel
 
-Run in cloud, local enterprise, or private-cloud environments
+# 4. Install backend dependencies
+pip install -r backend/requirements.txt
+```
 
-3. Core Architecture
+---
 
-User uploads PDF
-       ↓
-Document classification / routing
-       ↓
-┌─────────────┬─────────────┬─────────────┐
-↓             ↓             ↓
-Text          Tables        Charts / Images
-PyMuPDF       Docling       Vision Model
-              / Camelot
-↓             ↓             ↓
-└─────────────┴──────┬──────┘
-                     ↓
-              Structured Data
-                     ↓
-              Validation Layer
-                     ↓
-          Python Financial Engine
-                     ↓
-             Anomaly Detection
-                     ↓
-                 Embeddings
-                     ↓
-              Vector DB / RAG
-                     ↓
-                  LLM
-                     ↓
-          Evidence-backed Answer
+### 3. Frontend Setup (Node.js & Vite)
 
-4. Technology Responsibilities
+Navigate into the `frontend` folder and install NPM packages:
 
-Text Extraction
+```bash
+cd frontend
+npm install
+cd ..
+```
 
-Possible tools:
+---
 
-PyMuPDF
+### 4. Verify Local LLM Weights
 
-Docling
+DoxFin includes local offline model weights for **IBM Granite 4.0 1B** inside the `models/` directory:
 
-Recommended initial approach:
+```
+models/
+└── granite-4.0-1b/
+    ├── config.json
+    ├── model.safetensors  (3.26 GB)
+    ├── tokenizer.json
+    └── chat_template.jinja
+```
 
-Digital PDF
-   ↓
-PyMuPDF
-   ↓
-Extracted text
+Verify that the model directory exists and has all safetensors files before running.
 
-OCR should only be used when required for scanned or image-only pages.
+---
 
-Table Extraction
+## Running DoxFin
 
-Possible tools:
+### Method A: Local Dual-Terminal Run (Recommended for Dev)
 
-Docling
+Open two terminal windows from the repository root:
 
-Camelot
+#### Terminal 1 — Backend API Server
+Activate your virtual environment and start the FastAPI backend:
 
-Other table-extraction tools if required
+```powershell
+# Windows
+.\.venv\Scripts\activate
+python run_backend.py
+```
+```bash
+# Linux / macOS
+source .venv/bin/activate
+python run_backend.py
+```
 
-Example:
+The backend server will start at:
+- **API Server:** `http://127.0.0.1:8000`
+- **Swagger / Interactive OpenAPI Docs:** `http://127.0.0.1:8000/docs`
+- **Redoc Specification:** `http://127.0.0.1:8000/redoc`
 
-Balance Sheet PDF
-       ↓
-Docling / Camelot
-       ↓
-Pandas DataFrame
+#### Terminal 2 — Frontend Application
+Start the Vite development server:
 
-Chart and Image Understanding
+```bash
+cd frontend
+npm run dev
+```
 
-Possible vision-language models include:
+The React workspace will start at:
+- **Web UI:** `http://localhost:3000`
 
-Small Phi vision-class models
+> **Note:** The Vite dev server is pre-configured to proxy all `/api` requests directly to `http://127.0.0.1:8000`.
 
-Smaller Qwen-VL models
+---
 
-Medium Qwen-VL models
+### Method B: Automated One-Command Installer
 
-InternVL
+DoxFin provides an automated self-hosted provisioning script (`installer.py`) that checks prerequisites, initializes directories, verifies dependencies, and creates the database schema:
 
-Granite vision/document models
+```bash
+python installer.py
+```
 
-Other suitable multimodal models
+The installer performs 5 automated steps:
+1. Configures `uploads`, `extracted`, `cache`, `vector_store`, and `logs` directories.
+2. Verifies Python dependencies.
+3. Initializes the SQLite schema (`doxfin.db`).
+4. Checks enterprise licenses.
+5. Displays ready-to-run service commands.
 
-DoxFin should not run vision processing on every image.
+---
 
-Image / Page
-     ↓
-Financially relevant?
-     ├── No  → Skip heavy vision processing
-     └── Yes → Send to Vision Model
+### Method C: Docker & Docker Compose (Production On-Premise)
 
-5. Financial Engine
+For containerized enterprise deployments:
 
-Financial calculations should be performed using deterministic Python code rather than relying on an LLM.
+```bash
+# Build and launch DoxFin container in background
+docker-compose up --build -d
 
-Possible calculations include:
+# Check running status and health
+docker-compose ps
 
-Revenue growth
+# View live container logs
+docker-compose logs -f doxfin-backend
+```
 
-Profit growth
+- Backend API container runs on `http://localhost:8000`.
+- Data persistence is managed via Docker named volumes: `doxfin_data`, `doxfin_extracted`, `doxfin_vector`, and `doxfin_cache`.
+- Container health check verifies `http://localhost:8000/docs` every 30 seconds.
 
-Net profit margin
+---
 
-Operating margin
+## Demo Credentials & Role-Based Access Control
 
-Gross margin
+DoxFin automatically seeds demo enterprise user accounts on the first database initialization:
 
-Return on Equity
+| Email | Password | Role | Permissions |
+| :--- | :--- | :--- | :--- |
+| **`pratham@doxfin.internal`** | `admin123` | **ADMIN / OWNER** | Full system administration, license management, upload, audit logs |
+| **`analyst1@doxfin.internal`** | `analyst123` | **ANALYST** | Read and execute quantitative analysis, run RAG queries |
+| **`analyst2@doxfin.internal`** | `analyst123` | **ANALYST** | Read-only access to existing reports |
+| **`reviewer1@doxfin.internal`** | `reviewer123` | **REVIEWER** | Read and sign off on metric invariance verifications |
+| **`employee4@doxfin.internal`** | `employee123` | **VIEWER** | Minimal restricted viewer privileges |
 
-Return on Capital Employed
+---
 
-Return on Assets
+## Key Workflows & Feature Guide
 
-Debt-to-equity ratio
+### PyMuPDF Fast Pass & Selective Page Router
+1. Drag and drop any 10-page to 500-page financial PDF into the workspace.
+2. The PyMuPDF Fast Pass analyzes optical bounds and page structures in ~1.2 seconds.
+3. Text pages bypass heavy OCR; tables are routed to Docling; charts are routed to Qwen-VL.
+4. Live processing status streams in the real-time terminal console.
 
-Current ratio
+### Conversational Neural Chat ("Ask DoxFin")
+- Switch to the **Ask DoxFin** tab in the sidebar.
+- Type any question or click a quick suggestion chip:
+  - *"Summarize Note 17 trade receivables aging"*
+  - *"What is the revenue growth YoY?"*
+  - *"Check Ind AS 36 impairment disclosures"*
+  - *"Explain Free Cash Flow bridge"*
+- **Multi-turn conversation thread:** User bubbles on the right, DoxFin AI on the left with timestamps.
+- **Direct Evidence Tables:** Receivables aging brackets and financial tables are rendered as formatted HTML tables directly within the citation card, accompanied by clickable **Page `<N>`** badges.
 
-Quick ratio
+### Deterministic Financial Ratio Engine
+- Switch to the **Financial Analysis** tab.
+- All numbers are strictly rounded off to 2 decimal places (e.g. `Operating Margin: 49.00%`, `Current Ratio: 3.83x`).
+- Zero LLM math hallucination: Every number is derived from Python AST calculations mapped directly to Schedule III and Ind AS line items.
 
-Interest coverage ratio
+### Forensic Anomaly Detection
+- Switch to the **Anomalies** tab.
+- Evaluates 18 forensic accounting rules:
+  - **Trade Receivables Divergence:** Flagged when receivables surge significantly faster than revenue growth (potential channel stuffing or collection strain).
+  - **Operating Cash Flow Lag:** Detects EBITDA vs. OCF disconnects.
+  - **Goodwill Impairment & Debt-to-Equity Strains.**
 
-Free cash flow
-
-Cash flow from operations
-
-EPS
-
-Asset turnover
-
-Inventory turnover
-
-Receivables turnover
-
-Example:
-
-Revenue 2024 = ₹1,000 Cr
-Revenue 2025 = ₹1,200 Cr
-
-Growth
-= (1200 - 1000) / 1000 × 100
-= 20%
-
-The LLM receives the calculated result instead of performing the calculation itself.
-
-6. Anomaly Detection
-
-DoxFin can detect unusual financial relationships such as:
-
-Revenue increasing while profit decreases
-
-Profit increasing while operating cash flow decreases
-
-Debt increasing sharply
-
-Receivables growing faster than revenue
-
-Margins falling significantly
-
-Free cash flow weakening
-
-Current ratio deteriorating
-
-Expenses increasing faster than sales
-
-Example workflow:
-
-Anomaly detected
-      ↓
-Retrieve related evidence using RAG
-      ↓
-Find management explanation
-      ↓
-LLM generates explanation
-      ↓
-Show supporting page / section
-
-An anomaly should not automatically be treated as fraud or financial failure.
-
-7. RAG Architecture
-
-DoxFin should avoid sending an entire 500-page report directly to an LLM.
-
-Financial Report
-      ↓
-Chunking
-      ↓
-Embeddings
-      ↓
-Vector Search
-      ↓
-Relevant 3–8 chunks
-      ↓
-LLM
-      ↓
-Evidence-backed answer
-
-Possible vector technology: FAISS.
-
-8. Hallucination Reduction
-
-DoxFin should not use the LLM as the authoritative source of financial numbers.
-
-PDF
- ↓
-Structured extraction
- ↓
-Validation
- ↓
-Financial Engine
- ↓
-RAG evidence
- ↓
-LLM explanation
-
-Cross-Verification
-
-Financial Table → Debt = ₹820 Cr
-Nearby Text    → Debt = ₹820 Cr
-                 ↓
-              Verified
-
-If sources disagree:
-
-Table → ₹820 Cr
-Chart → ₹280 Cr
-        ↓
-Conflict detected
-        ↓
-Human verification required
-
-DoxFin should not silently guess.
-
-9. Human-in-the-Loop
-
-For low-confidence or conflicting results:
-
-AI Result
-   ↓
-Low confidence / conflict
-   ↓
-Flag for review
-   ↓
-Financial Analyst
-   ↓
-Approve / Correct
-
-Enterprise customers may require approval before exporting analysis, finalizing reports, or sharing high-risk conclusions.
-
-10. Confidence Scoring
-
-A future confidence layer could classify extracted results.
-
-98% confidence → normal output
-75% confidence → warning
-50% confidence → human verification
-
-Actual thresholds should be determined through testing and benchmarking rather than guessed.
-
-11. Evidence and Citations
-
-Important DoxFin outputs should ideally contain:
-
-Document name
-
-Page number
-
-Section
-
-Table reference
-
-Chart reference
-
-Example:
-
-Revenue increased 20% in FY2025.
-
-Source:
-Annual Report
-Page 126
-Consolidated Statement of Profit & Loss
-
-12. Large PDF Processing Strategy
-
-A 400–500-page report should not be processed using the most expensive model on every page.
-
-500-page PDF
-     ↓
-Lightweight page classification
-     ↓
-┌──────────┬──────────┬──────────┬──────────┐
-Text       Table      Chart      Irrelevant
-↓          ↓          ↓          ↓
-PyMuPDF    Docling    Vision     Skip
-
-Possible relevant-content signals:
-
-Revenue
-
-Profit
-
-EBITDA
-
-Borrowings
-
-Debt
-
-Cash Flow
-
-Assets
-
-Liabilities
-
-Equity
-
-Segment
-
-Operating Margin
-
-Financial Results
-
-Balance Sheet
-
-Profit and Loss
-
-Financial captions
-
-Axes and legends
-
-Table structure
-
-Section headings
-
-Possible scoring:
-
-Financial keyword       +2
-Chart/table detected    +2
-Financial caption       +3
-Financial section       +2
-Decorative/photo only   -3
-
-13. Performance Optimization
-
-Selective Processing
-
-Run expensive AI only on relevant pages.
-
-Parallel Processing
-
-Text Extraction   ─┐
-Table Extraction   ├── Run concurrently
-Vision Processing ─┘
-
-Batch Processing
-
-Batch embeddings, images, text chunks, and table operations.
-
-Avoid Unnecessary OCR
-
-Use PyMuPDF for digitally readable PDFs and OCR only when required.
-
-Section Prioritization
-
-Prioritize financial statements, notes, MD&A, risk sections, and segment reporting.
-
-Caching
-
-Store extracted text, tables, chart descriptions, embeddings, calculated metrics, anomalies, and page references.
-
-Progressive Processing
-
-Stage 1 → Text search ready
-Stage 2 → Tables ready
-Stage 3 → Charts fully analyzed
-
-Quantization
-
-Use smaller 4-bit or 8-bit models where appropriate.
-
-14. Memory and Hardware Strategy
-
-Local LLM + vision does not automatically require 32 GB or 64 GB RAM.
-
-Memory requirements depend on model size, quantization, image resolution, batch size, context length, system RAM, GPU VRAM, and whether multiple models are loaded simultaneously.
-
-Possible optimizations:
-
-Smaller models
-
-Quantization
-
-Smaller batches
-
-Lower image resolution where acceptable
-
-CPU offloading
-
-Sequential model loading
-
-GPU server deployment
-
-15. Small vs Large Models
-
-Small Models
-
-Good for laptops, lower memory, local Lite deployments, basic chart understanding, and lower inference cost.
-
-Medium Models
-
-Good for balanced accuracy and resource use, cloud or company GPU servers, and better visual/document reasoning.
-
-Large Models
-
-Good for complex charts, dense documents, advanced reasoning, and strong cloud or enterprise GPU infrastructure.
-
-DoxFin should use the smallest model that meets benchmarked accuracy requirements.
-
-16. Hardware-Adaptive Processing
-
-DoxFin can inspect CPU, RAM, GPU, and VRAM, then select a processing mode.
-
-Lite Mode
-
-Small models
-
-Lower batch size
-
-Limited parallelism
-
-Balanced Mode
-
-Medium models
-
-Moderate parallel processing
-
-Performance Mode
-
-Larger batches
-
-More workers
-
-Strong GPU utilization
-
-Larger models where justified
-
-Deployment Options
-
-17. DoxFin Cloud SaaS
-
-User
- ↓
-Browser
- ↓
-DoxFin Cloud
- ↓
-Cloud CPU / GPU
- ↓
-LLM + Vision + RAG
-
-Advantages:
-
-Users do not need powerful hardware
-
-Scalable
-
-Easier deployment
-
-Can use strong GPUs
-
-Parallel processing
-
-Disadvantages:
-
-Cloud GPU cost
-
-Storage cost
-
-Increased security responsibility
-
-Sensitive documents leave the customer's infrastructure
-
-18. DoxFin Enterprise Local
-
-Employees
- ↓
-Browser
- ↓
-Company Server
- ├── DoxFin
- ├── Database
- ├── RAG
- ├── LLM
- └── Vision Model
-       ↓
- Company GPU
-
-Advantages:
-
-Financial data remains within the company
-
-Company provides compute
-
-No cloud inference dependency
-
-Suitable for confidential documents
-
-Disadvantages:
-
-Performance depends on customer hardware
-
-Installation and support are more complex
-
-19. DoxFin Private Cloud
-
-Company
- ↓
-Company AWS / Azure / GCP environment
- ↓
-Private GPU Instance
- ↓
-DoxFin
-
-Benefits:
-
-Powerful scalable hardware
-
-Customer controls the cloud environment
-
-Useful for enterprises that do not own physical GPU servers
-
-20. Hybrid Deployment Strategy
-
-                    DOXFIN
-                       │
-       ┌───────────────┼───────────────┐
-       ↓               ↓               ↓
-     SaaS          Local Enterprise   Private Cloud
-       ↓               ↓               ↓
-DoxFin GPU        Customer GPU      Customer Cloud GPU
-
-Customers can choose based on security, privacy, performance, hardware, cost, and compliance.
-
-Security
-
-21. Security Principle
-
-Every uploaded document may contain confidential or sensitive information.
-
-Never depend on users avoiding sensitive uploads.
-
-22. Encryption in Transit
-
-Use TLS/HTTPS when information travels between systems.
-
-User
- 🔒 HTTPS/TLS
-DoxFin Server
-
-23. Encryption at Rest
-
-Sensitive stored data should be encrypted, including:
-
-Original PDFs
-
-Extracted text
-
-Tables
-
-Temporary files
-
-Cached chart data
-
-Embeddings
-
-Analysis results
-
-Backups
-
-AES-256 may be used where appropriate, combined with proper key management.
-
-24. Key Management
-
-Possible approaches:
-
-Cloud Key Management Service
-
-HSM
-
-TPM
-
-Enterprise secrets vault
-
-25. Authentication and Authorization
-
-Possible controls:
-
-User login
-
-MFA
-
-RBAC
-
-ABAC for advanced enterprise deployments
-
-26. Audit Logs
-
-Example:
-
-10:30 User A logged in
-10:32 User A uploaded Report.pdf
-10:35 Analysis completed
-11:02 User B viewed report
-11:10 User B exported analysis
-
-27. Data Retention
-
-Organizations should be able to configure policies such as:
-
-Delete immediately after analysis
-
-Keep for 30 days
-
-Keep for 90 days
-
-Keep for one year
-
-Custom retention period
-
-Deletion should consider the original PDF, extracted text, tables, images, embeddings, caches, derived analysis, and applicable backup-retention rules.
-
-28. Multi-Tenant SaaS Isolation
-
-Company A → Company A Data
-Company B → Company B Data
-Company C → Company C Data
-
-One tenant must not access another tenant's PDFs, embeddings, analysis, chats, or metadata.
-
-29. DPDP Considerations
-
-The Digital Personal Data Protection framework may be relevant when DoxFin processes digital personal data relating to identifiable individuals.
-
-Examples may include names, email addresses, employee information, personal identifiers, and certain personal financial information.
-
-Not every financial figure is automatically personal data. Production deployment should include appropriate legal and compliance review.
-
-30. Optional Blockchain / Integrity Layer
-
-Blockchain is not required for core DoxFin security.
-
-If used, a better use case is document integrity:
-
-PDF
- ↓
-SHA-256 Hash
- ↓
-Tamper-Evident Record
-
-Do not store confidential PDFs directly on a blockchain.
-
-Alternatives include digital signatures, hash-chained logs, and append-only audit storage.
-
-Workflow and Scaling Tools
-
-31. Useful Open-Source Repositories
-
-Docling
-
-Document parsing, layout, tables, and structured document conversion.
-
-Docling Serve
-
-Document-processing API, worker-based conversion, asynchronous jobs, and scalable processing.
-
-PyMuPDF
-
-Fast PDF text extraction, page handling, and image extraction.
-
-Camelot
-
-Extracting PDF tables and converting them to Pandas DataFrames.
-
-FAISS
-
-Vector similarity search and RAG retrieval.
-
-Celery
-
-User-triggered background processing and distributed task execution.
-
-Redis / RabbitMQ
-
-Task broker, queue, and caching.
-
-Apache Airflow
-
-Scheduled pipelines, re-indexing, filing updates, cleanup workflows, retry handling, and workflow dependencies.
-
-Airflow does not directly make the AI model faster.
-
-Ray
-
-Distributed CPU/GPU processing and scaling Python AI workloads across machines.
-
-Unstructured
-
-Can be evaluated for document partitioning and parallel PDF workflows.
-
-32. Airflow vs Celery vs Ray
-
-Tool
-
-Main Role
-
-Celery
-
-Real-time/background application jobs
-
-Airflow
-
-Scheduled/batch workflows
-
-Ray
-
-Distributed compute
-
-Docling Serve
-
-Document conversion workers
-
-Do not add all tools unless the architecture requires them.
-
-33. Suggested Initial Stack
-
-Frontend
-React
-
-Backend
-FastAPI
-
-Database
-PostgreSQL
-
-Background Jobs
-Celery + Redis
-OR
-Docling Serve workers
-
-PDF Processing
-PyMuPDF + Docling
-
-Table Processing
-Docling / Camelot
-
-Vision
-Small or Medium VLM
-
-Financial Engine
-Python + Pandas
-
-Embeddings
-Suitable embedding model
-
-Vector Search
-FAISS
-
-Explanation
-Granite LLM
-
-Security
-TLS + Authentication + RBAC
-+ Encryption + Audit Logs
-
-Licensing and Business Model
-
-34. Enterprise Licensing
-
-DoxFin Enterprise can use cryptographically signed offline licence files.
-
-{
-  "customer": "ABC Ltd",
-  "product": "DoxFin Enterprise",
-  "plan": "enterprise",
-  "max_users": 50,
-  "expires": "2027-12-31",
-  "features": [
-    "rag",
-    "financial_analysis",
-    "anomaly_detection",
-    "vision"
-  ]
-}
-
-Flow:
-
-DoxFin creates licence
-       ↓
-Signs with private key
-       ↓
-Customer receives licence
-       ↓
-DoxFin verifies locally
-using public key
-
-35. Monetization Options
-
-SaaS
-
-Customer pays monthly, annual, or usage-based subscription. DoxFin pays for infrastructure.
-
-Enterprise Local
-
-Customer provides GPU, server, and storage. DoxFin charges for annual licence, deployment, support, updates, and integrations.
-
-Private Cloud
-
-Customer pays cloud infrastructure. DoxFin charges for software licence, deployment, support, and maintenance.
-
-Cost Planning
-
-36. Prototype / Development Cost
-
-A low initial cost is possible if existing laptops, open-source software, pretrained models, and minimal cloud usage are used.
-
-A small development estimate must not be presented as the cost of commercial deployment.
-
-37. Production Cost Categories
-
-Infrastructure
-
-CPU
-
-GPU
-
-Storage
-
-Databases
-
-Networking
-
-Backups
-
-Monitoring
-
-Security
-
-Vulnerability testing
-
-Penetration testing
-
-Security audits
-
-Key management
-
-Security monitoring
-
-Legal and Compliance
-
-Privacy policy
-
-Terms
-
-Contracts
-
-Data processing agreements
-
-DPDP-related review where applicable
-
-Product Operations
-
-Development
-
-DevOps
-
-Maintenance
-
-Customer support
-
-Financial-domain review
-
-Software / Licensing
-
-Some final components may have commercial licensing costs.
-
-Open-source software reduces licensing expenses but does not eliminate compute or operational costs.
-
-Benchmarking
-
-38. Required Performance Benchmarks
-
-Test DoxFin with:
-
-100-page reports
-
-300-page reports
-
-500-page reports
-
-Measure:
-
-Upload time
-
-Text extraction time
-
-Table extraction time
-
-Vision-processing time
-
-Embedding-generation time
-
-Financial-engine time
-
-Index creation
-
-First-query latency
-
-Later-query latency
-
-RAM usage
-
-VRAM usage
-
-CPU utilization
-
-GPU utilization
-
-Cloud cost per document
-
-Do not claim a fixed 500-page processing time before benchmarking.
-
-Things to Avoid
-
-39. Bad Architecture Decisions
-
-Avoid:
-
-Sending all 500 pages directly to an LLM
-
-Running vision on every page
-
-Using the LLM for financial arithmetic
-
-Trusting extracted values without validation
-
-Claiming RAG completely eliminates hallucinations
-
-Assuming users will not upload confidential documents
-
-Assuming local deployment is automatically secure
-
-Assuming cloud automatically makes processing faster
-
-Claiming fixed processing times without measurements
-
-Adding Airflow, Ray, Celery, and other systems without need
-
-Using one huge model for every task
-
-Treating every financial value as DPDP personal data
-
-Presenting a small prototype budget as full production cost
-
-Proposed Final Architecture
-
-                         DOXFIN
-                            │
-                      React Frontend
-                            │
-                         FastAPI
-                            │
-                  Authentication / RBAC
-                            │
-                       Upload Service
-                            │
-                  Background Job Queue
-                            │
-                   Relevance/Page Router
-                            │
-       ┌────────────────────┼────────────────────┐
-       ↓                    ↓                    ↓
-    PyMuPDF              Docling             Vision VLM
-      Text                Tables              Charts
-       ↓                    ↓                    ↓
-       └────────────────────┼────────────────────┘
-                            ↓
-                     Validation Layer
-                            ↓
-                  Python Financial Engine
-                            ↓
-                    Anomaly Detection
-                            ↓
-                   Embeddings + FAISS
-                            ↓
-                           RAG
-                            ↓
-                       Granite LLM
-                            ↓
-                Evidence-Backed Explanation
-                            ↓
-                   Confidence Verification
-                            ↓
-              Human Review When Necessary
-
-Deployment options:
-
-                       DOXFIN
-                          │
-          ┌───────────────┼───────────────┐
-          ↓               ↓               ↓
-       Cloud SaaS     Enterprise Local   Private Cloud
-          ↓               ↓               ↓
-   DoxFin Cloud GPU  Customer GPU     Customer Cloud GPU
-
-Future Improvements
-
-Multi-company comparison
-
-Multi-year trend analysis
-
-Earnings-call analysis
-
-Financial forecasting
-
-Company-specific dashboards
-
-Automated sensitivity detection
-
-Role-based enterprise workspaces
-
-Collaborative analyst review
-
-Exportable evidence-backed reports
-
-Model benchmarking framework
-
-Automatic extraction-quality scoring
-
-Advanced fraud-risk indicators
-
-Private-cloud deployment automation
-
-Distributed GPU processing
-
-Advanced document-integrity verification
-
-Product Positioning
-
-DoxFin is not intended to rely entirely on a single LLM.
-
-Its value comes from combining:
-
-Document Intelligence
-        +
-Financial Computation
-        +
-Anomaly Detection
-        +
-RAG
-        +
-Multimodal AI
-        +
-Evidence Verification
-        +
-Enterprise Privacy
-
-The goal is to create a system that is not only capable of reading financial reports, but also capable of producing structured, explainable, and verifiable financial intelligence.
-
-Disclaimer
-
-DoxFin should be positioned as a financial research and document-analysis platform, not as a replacement for professional financial, investment, accounting, legal, or compliance advice.
-
-Automated anomaly detection indicates unusual patterns and should not automatically be interpreted as fraud, wrongdoing, or investment advice.
+### SOC2 Type II Audit Ledger
+- Switch to the **Audit** tab.
+- Every document ingestion, user query, ratio verification, and authentication event is cryptographically recorded in an immutable ledger with timestamps, user identities, client IP addresses, and hash fingerprints.
+
+---
+
+## Verification & Automated Test Suite
+
+Run these test scripts to verify your installation:
+
+### 1. Test PyMuPDF Page Router
+```bash
+python test_router.py
+```
+*Validates that text, table, chart, and irrelevant pages are classified accurately.*
+
+### 2. Test Local IBM Granite 4.0 1B LLM
+```bash
+python test_granite.py
+```
+*Loads the local model weights into memory and generates a 2-sentence financial explanation.*
+
+### 3. Test End-to-End FAISS + Granite RAG Pipeline
+```bash
+python test_faiss_granite_pipeline.py
+```
+*Builds an in-memory vector index and evaluates sub-second RAG retrieval.*
+
+### 4. Verify Frontend Production Build
+```bash
+cd frontend
+npm run build
+```
+*Validates TypeScript types and generates production bundles (`tsc && vite build`).*
+
+---
+
+## Environment Configuration & Variables
+
+You can configure DoxFin by creating a `.env` file in the project root:
+
+```ini
+# Environment Mode
+ENVIRONMENT=development
+
+# Database Connection (SQLite by default; supports PostgreSQL in production)
+DATABASE_URL=sqlite:///./doxfin.db
+# PostgreSQL Example: postgresql+psycopg2://user:password@localhost:5432/doxfin
+
+# Security & JWT Tokens
+DOXFIN_JWT_SECRET=your_super_secret_cryptographic_key_here
+DOXFIN_JWT_EXPIRATION_MINUTES=1440
+
+# Hardware & Inference Profile (LITE | BALANCED | PERFORMANCE)
+DOXFIN_HARDWARE_MODE=LITE
+DOXFIN_MEMORY_CEILING_GB=4.0
+
+# Storage Directories
+DOXFIN_UPLOAD_DIR=./backend/uploads
+DOXFIN_EXTRACTED_DIR=./backend/extracted
+DOXFIN_VECTOR_DIR=./backend/vector_store
+DOXFIN_CACHE_DIR=./backend/cache
+```
+
+---
+
+## Repository Structure
+
+```
+DoxFin/
+├── backend/
+│   ├── app/
+│   │   ├── api/                 # FastAPI REST route endpoints
+│   │   │   ├── audit.py         # SOC2 compliance & audit ledger routes
+│   │   │   ├── auth.py          # JWT authentication & user management
+│   │   │   ├── documents.py     # Document upload, parsing, status, & RAG query
+│   │   │   └── enterprise.py    # Hardware profiling & license checks
+│   │   ├── database/            # SQLAlchemy models, sessions & migrations
+│   │   │   ├── database.py      # SQLite / PostgreSQL engine config
+│   │   │   └── models.py        # User, Document, Metric, Anomaly, Audit models
+│   │   ├── services/            # Core computational & AI engines
+│   │   │   ├── anomaly_service.py     # 18 forensic accounting stress rules
+│   │   │   ├── audit_service.py       # SOC2 audit trail logging
+│   │   │   ├── auth_service.py        # RBAC permissions & password hashing
+│   │   │   ├── chunking_service.py    # Table-aware semantic chunking
+│   │   │   ├── extraction_service.py  # Docling / PyMuPDF extractors
+│   │   │   ├── financial_service.py   # Deterministic Python ratio math
+│   │   │   ├── granite_service.py     # Local IBM Granite 4.0 1B LLM loader
+│   │   │   ├── page_router.py         # PyMuPDF Fast Pass classifier
+│   │   │   ├── rag_service.py         # FAISS vector store & prompt grounding
+│   │   │   └── security_service.py    # PDF sanitization & crypto tokens
+│   │   └── main.py              # FastAPI application entrypoint
+│   └── requirements.txt         # Python package dependencies
+│
+├── frontend/
+│   ├── src/
+│   │   ├── components/          # Reusable UI components & DoxFin vector logo
+│   │   ├── App.tsx              # Main multi-view application (Chat, Analysis, etc.)
+│   │   ├── index.css            # Dark/light theme design system tokens
+│   │   └── main.tsx             # React DOM root mounting
+│   ├── package.json             # React 19, TypeScript, Lucide, Vite dependencies
+│   └── vite.config.ts           # Development server & proxy configuration
+│
+├── models/
+│   └── granite-4.0-1b/          # Local offline IBM Granite 4.0 1B LLM weights
+│
+├── installer.py                 # Automated enterprise deployment & validation script
+├── run_backend.py               # Root-level backend launcher
+├── Dockerfile                   # Production Python 3.11 container specification
+├── docker-compose.yml           # Multi-volume Docker orchestration
+├── test_router.py               # Unit test: Fast pass page classifier
+├── test_granite.py              # Unit test: IBM Granite local inference
+└── test_faiss_granite_pipeline.py # Unit test: FAISS vector retrieval & RAG
+```
+
+---
+
+## Troubleshooting & FAQ
+
+### 1. PowerShell: "Running scripts is disabled on this system"
+Run this command in PowerShell to allow the virtual environment activation script:
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+### 2. PyMuPDF or Docling library issues on Linux
+Ensure required system packages for PDF rendering and OCR are installed:
+```bash
+sudo apt-get update && sudo apt-get install -y libmupdf-dev libgomp1 tesseract-ocr
+```
+
+### 3. Port 8000 or 3000 is already in use
+- **Backend:** Change port in `run_backend.py` (`port=8001`) and update `frontend/vite.config.ts` proxy target.
+- **Frontend:** Start Vite on an alternate port: `cd frontend && npm run dev -- --port 3001`.
+
+### 4. GPU Out-of-Memory (CUDA OOM)
+If running on systems with limited GPU VRAM (e.g. 4GB Laptop GPUs), DoxFin defaults to the **`LITE`** hardware profile (`torch.float32` / CPU fallback or 4-bit quantization). You can explicitly toggle this via the web UI in the **System** tab.
+
+### 5. Why are financial ratios different from raw LLM outputs?
+DoxFin enforces **Zero Hallucination Arithmetic**. If an LLM estimates a ratio as `14.2%` while the deterministic Python formula evaluates it to `18.40%` based on audited P&L line items, DoxFin always displays the deterministic `18.40%` and flags the source note.
+
+---
+
+## Enterprise Disclaimer & Pilot Licensing
+
+- **Disclaimer:** DoxFin is an advanced financial intelligence and document audit assistance system. It is designed to aid qualified credit analysts, equity researchers, and auditors. It does not provide automated legal, accounting, investment, or tax advice.
+- **Licensing:** Enterprise Pilot licenses are managed locally via `backend/licenses/doxfin.lic`. For air-gapped on-premise keys and institutional licensing, contact your internal system administrator.
+
+---
+
+<p align="center">
+  <strong>Built with Precision for Quantitative Financial Intelligence.</strong><br>
+  © 2026 DoxFin Systems. All rights reserved.
+</p>
