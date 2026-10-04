@@ -19,6 +19,27 @@ MIN_EVIDENCE_THRESHOLD = 0.38
 INSUFFICIENT_EVIDENCE_MESSAGE = "The uploaded report does not provide sufficient evidence to answer this question."
 
 
+ADVERSARIAL_INJECTION_PATTERNS = [
+    r"ignore\s+(all\s+)?(previous|prior|above)\s+(instructions|prompts|rules)",
+    r"disregard\s+(all\s+)?(previous|prior|above)\s+(instructions|prompts|rules)",
+    r"you\s+are\s+now\s+(in\s+)?(developer\s+mode|dan|jailbreak)",
+    r"(reveal|output|display|show|print|leak)\s+(the\s+)?(initial\s+|original\s+)?(system\s+)?(prompt|instructions|rules|secret|password)",
+    r"<script[\s>]",
+    r"javascript:",
+    r"drop\s+table\s+",
+    r"union\s+select\s+"
+]
+
+
+def check_prompt_safety(query: str) -> Tuple[bool, Optional[str]]:
+    """Guards against adversarial prompt injection and jailbreak attempts."""
+    q_lower = query.lower()
+    for pat in ADVERSARIAL_INJECTION_PATTERNS:
+        if re.search(pat, q_lower):
+            return False, "Security Guard: Adversarial instruction or prompt injection pattern detected. Query rejected under DoxFin compliance protocols."
+    return True, None
+
+
 def retrieve_context(
     query: str,
     faiss_store: FaissStore,
@@ -191,10 +212,20 @@ class RAGService:
         min_threshold: float = MIN_EVIDENCE_THRESHOLD,
         verified_metrics: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
-        """
-        Execute full RAG flow with Phase 34 Evidence Sufficiency Verification:
-        Question -> Embedding -> FAISS retrieval -> Evidence Check -> Context Assembly -> Granite Explanation.
-        """
+        # Security Guard: Adversarial prompt injection & jailbreak detection
+        is_safe, safety_reason = check_prompt_safety(query)
+        if not is_safe:
+            return {
+                "query": query,
+                "answer": safety_reason,
+                "has_sufficient_evidence": False,
+                "refusal_reason": "PROMPT_INJECTION_DETECTED",
+                "prompt": None,
+                "citations": [],
+                "retrieved_chunks_count": 0,
+                "status": "SECURITY_VIOLATION"
+            }
+
         chunks = retrieve_context(query, faiss_store, top_k=top_k)
         has_evidence, reason = is_evidence_sufficient(query, chunks, threshold=min_threshold)
 

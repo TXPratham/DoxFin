@@ -880,8 +880,21 @@ export default function App() {
 
   const formatMetricDisplay = (val: number, unit: string) => {
     if (typeof val !== 'number' || isNaN(val)) return 'N/A';
-    if (unit === 'Cr' || unit === 'crore') {
-      return `₹${Math.round(val).toLocaleString()} Cr`;
+    const isNegative = val < 0;
+    const absVal = Math.abs(val);
+    const formatted = Math.round(absVal).toLocaleString();
+
+    if (unit === '€M' || unit === '€ million' || unit === 'EUR' || unit === 'EUR M' || unit.includes('€')) {
+      return isNegative ? `(€${formatted} M)` : `€${formatted} M`;
+    }
+    if (unit === '$M' || unit === '$ million' || unit === 'USD' || unit === 'USD M' || unit.includes('$')) {
+      return isNegative ? `($${formatted} M)` : `$${formatted} M`;
+    }
+    if (unit === '£M' || unit === '£ million' || unit === 'GBP' || unit === 'GBP M' || unit.includes('£')) {
+      return isNegative ? `(£${formatted} M)` : `£${formatted} M`;
+    }
+    if (unit === 'Cr' || unit === 'crore' || unit === '₹ Cr' || unit === 'INR' || unit.includes('₹')) {
+      return isNegative ? `(₹${formatted} Cr)` : `₹${formatted} Cr`;
     }
     if (unit === '%') {
       return `${val.toFixed(2)}%`;
@@ -889,7 +902,7 @@ export default function App() {
     if (unit === 'ratio') {
       return `${val.toFixed(2)}x`;
     }
-    return `${val.toFixed(2)} ${unit}`;
+    return isNegative ? `(${formatted}) ${unit}` : `${formatted} ${unit}`;
   };
 
   const renderEvidenceContent = (text: string) => {
@@ -2045,7 +2058,7 @@ export default function App() {
                     <div className="execution-card-header">
                       <div>
                         <div className="execution-title">Deterministic Financial Schedules ({activeFilename})</div>
-                        <div className="execution-subtitle">Python Deterministic Arithmetic • Ind AS & Schedule III Grounding</div>
+                        <div className="execution-subtitle">Python Deterministic Arithmetic • {metrics.some(m => m.unit?.includes('€') || m.unit?.includes('$') || m.unit?.includes('£')) ? 'IFRS / International Audited Disclosures' : 'Ind AS & Schedule III Grounding'}</div>
                       </div>
                       <span className="sync-lock-badge">Audited Disclosures</span>
                     </div>

@@ -34,10 +34,10 @@ import re
 def extract_financial_inputs_from_document(
     classified_pages: List[Dict[str, Any]],
     tables_data: List[Dict[str, Any]]
-) -> Dict[str, float]:
+) -> Dict[str, Any]:
     """
     Deterministically extracts verified financial figures from extracted pages & tables.
-    Returns empty dict if no financial disclosures are found.
+    Detects document currency (EUR/€, USD/$, GBP/£, INR/₹) and extracts audited figures.
     """
     all_text = ""
     for p in classified_pages:
@@ -46,46 +46,122 @@ def extract_financial_inputs_from_document(
         all_text += " " + t.get("markdown", "")
 
     all_text_lower = all_text.lower()
-    
+
     financial_keywords = ["revenue", "turnover", "sales", "profit", "ebitda", "pat", "balance sheet", "cash flow", "assets", "liabilities"]
     if not any(k in all_text_lower for k in financial_keywords):
         return {}
 
-    extracted = {}
+    # 1. Detect Document Currency & Scale
+    currency_unit = "Cr"
+    if any(sym in all_text for sym in ["€", "EUR", "eur", "euro", "Euro", "€ million"]):
+        currency_unit = "€M"
+    elif any(sym in all_text for sym in ["$", "USD", "usd", "Dollar", "$ million"]):
+        currency_unit = "$M"
+    elif any(sym in all_text for sym in ["£", "GBP", "gbp", "Pound"]):
+        currency_unit = "£M"
+    elif any(sym in all_text for sym in ["₹", "INR", "inr", "crore", "Crore", "Cr"]):
+        currency_unit = "Cr"
 
+    extracted = {"currency_unit": currency_unit}
+
+    def parse_cell_num(s):
+        if not s: return None
+        s = s.strip().replace(",", "").replace(" ", "")
+        if s in ["-", "—", ""]: return 0.0
+        if s.startswith("(") and s.endswith(")"):
+            try: return -float(s[1:-1])
+            except: return None
+        try: return float(s)
+        except: return None
+
+    # 2. Table-First Extraction from Audited Financial Statements
+    for t in tables_data:
+        md = t.get("markdown", "")
+        if not md: continue
+        lines = md.split("\n")
+        note_col_idx = None
+        for line in lines:
+            if not line.startswith("|"): continue
+            cells = [c.strip() for c in line.split("|")[1:-1]]
+            if not cells: continue
+
+            for c_idx, c in enumerate(cells):
+                if "note" in c.lower():
+                    note_col_idx = c_idx
+
+            label = cells[0].lower()
+            num_cells = []
+            for c_idx, c in enumerate(cells[1:], start=1):
+                if c_idx == note_col_idx:
+                    continue
+                v = parse_cell_num(c)
+                if v is not None:
+                    num_cells.append(v)
+            if not num_cells: continue
+
+            if ("net revenue" in label or "revenue from operations" in label or "total revenue" in label) and "revenue_current" not in extracted:
+                extracted["revenue_current"] = num_cells[0]
+                if len(num_cells) > 1:
+                    extracted["revenue_previous"] = num_cells[1]
+            elif any(k in label for k in ["net profit/(loss)", "net profit", "profit for the year", "profit after tax"]) and "net_profit" not in extracted:
+                if "attributable" not in label:
+                    extracted["net_profit"] = num_cells[0]
+            elif "total current assets" in label and "current_assets" not in extracted:
+                extracted["current_assets"] = num_cells[0]
+            elif "total current liabilities" in label and "current_liabilities" not in extracted:
+                extracted["current_liabilities"] = num_cells[0]
+            elif "total equity" in label and "equity" not in extracted:
+                extracted["equity"] = num_cells[0]
+            elif "long-term debt" in label and "debt_long" not in extracted:
+                extracted["debt_long"] = num_cells[0]
+            elif "short-term debt" in label and "debt_short" not in extracted:
+                extracted["debt_short"] = num_cells[0]
+            elif "net cash from/(used in) operating activities" in label and "cfo" not in extracted:
+                extracted["cfo"] = num_cells[0]
+            elif "investments in property, plant and equipment" in label and "capex" not in extracted:
+                extracted["capex"] = abs(num_cells[0])
+
+    if "debt_long" in extracted or "debt_short" in extracted:
+        extracted["debt"] = (extracted.get("debt_long", 0) or 0) + (extracted.get("debt_short", 0) or 0)
+
+    # 3. Fallback Pattern Extraction (Guarded against 4-digit Year capture)
     patterns = {
         "revenue_current": [
-            r"(?:revenue(?:\s+from\s+operations)?|total\s+revenue|turnover|sales)[\s:\-=|]+(?:₹|\$|inr|usd)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
-            r"(?:₹|\$|inr|usd)\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)\s*(?:cr|crore|mn|million)?\s*(?:revenue|sales)",
+            r"(?:revenue(?:\s+from\s+operations)?|total\s+revenue|turnover|sales)[\s:\-=|]+(?:₹|\$|€|£|inr|usd|eur)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
+            r"(?:₹|\$|€|£|inr|usd|eur)\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)\s*(?:cr|crore|mn|million)?\s*(?:revenue|sales)",
         ],
         "net_profit": [
-            r"(?:profit\s+after\s+tax|pat|net\s+profit|profit\s+for\s+the\s+(?:year|period)|net\s+income)[\s:\-=|]+(?:₹|\$|inr|usd)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
+            r"(?:profit\s+after\s+tax|pat|net\s+profit|profit\s+for\s+the\s+(?:year|period)|net\s+income)[\s:\-=|]+(?:₹|\$|€|£|inr|usd|eur)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
         ],
         "debt": [
-            r"(?:total\s+debt|borrowings|total\s+borrowings)[\s:\-=|]+(?:₹|\$|inr|usd)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
+            r"(?:total\s+debt|borrowings|total\s+borrowings)[\s:\-=|]+(?:₹|\$|€|£|inr|usd|eur)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
         ],
         "equity": [
-            r"(?:total\s+equity|shareholders['\s]+equity|net\s+worth)[\s:\-=|]+(?:₹|\$|inr|usd)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
+            r"(?:total\s+equity|shareholders['\s]+equity|net\s+worth)[\s:\-=|]+(?:₹|\$|€|£|inr|usd|eur)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
         ],
         "current_assets": [
-            r"(?:total\s+)?current\s+assets[\s:\-=|]+(?:₹|\$|inr|usd)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
+            r"(?:total\s+)?current\s+assets[\s:\-=|]+(?:₹|\$|€|£|inr|usd|eur)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
         ],
         "current_liabilities": [
-            r"(?:total\s+)?current\s+liabilities[\s:\-=|]+(?:₹|\$|inr|usd)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
+            r"(?:total\s+)?current\s+liabilities[\s:\-=|]+(?:₹|\$|€|£|inr|usd|eur)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
         ],
         "cfo": [
-            r"(?:cash\s+(?:flow\s+)?from\s+operating\s+activities|operating\s+cash\s+flow|cfo)[\s:\-=|]+(?:₹|\$|inr|usd)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
+            r"(?:cash\s+(?:flow\s+)?from\s+operating\s+activities|operating\s+cash\s+flow|cfo)[\s:\-=|]+(?:₹|\$|€|£|inr|usd|eur)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
         ],
         "capex": [
-            r"(?:capital\s+expenditure(?:s)?|capex)[\s:\-=|]+(?:₹|\$|inr|usd)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
+            r"(?:capital\s+expenditure(?:s)?|capex)[\s:\-=|]+(?:₹|\$|€|£|inr|usd|eur)?\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)",
         ]
     }
 
     for key, p_list in patterns.items():
+        if key in extracted:
+            continue
         for pat in p_list:
             match = re.search(pat, all_text, re.IGNORECASE)
             if match:
                 val_str = match.group(1).replace(",", "")
+                if val_str in ["2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027"]:
+                    continue
                 try:
                     extracted[key] = float(val_str)
                     break
@@ -403,6 +479,8 @@ class DoxFin500PagePipeline:
                     validated_metrics["free_cash_flow"] = free_cash_flow(cfo_val, capex_val)
                 elif cfo_val is not None:
                     validated_metrics["free_cash_flow"] = cfo_val
+
+                validated_metrics["currency_unit"] = inputs.get("currency_unit", "Cr")
 
             cache.save_stage_data("validated_metrics", validated_metrics)
         cache.update_stage_status("financial_calculations", "COMPLETED", progress_percent=85, current_stage="Financial calculations")

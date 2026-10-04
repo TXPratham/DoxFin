@@ -66,6 +66,14 @@ pipeline = DoxFin500PagePipeline(
 )
 
 
+def validate_doc_id(document_id: str) -> str:
+    """Validate document_id to prevent directory traversal or injection."""
+    try:
+        return SecurityService.validate_document_id(document_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid document_id: {str(e)}")
+
+
 def _format_stage_details(stages: Dict[str, str], page_count: int = 0) -> List[StageDetailItem]:
     """Generates user-friendly checklist items for progress visualization."""
     stage_definitions = [
@@ -109,8 +117,13 @@ async def upload_document(
     if not any(fname_lower.endswith(ext) for ext in SUPPORTED_EXTS):
         raise HTTPException(status_code=400, detail=f"Unsupported file format. Supported formats: {', '.join(SUPPORTED_EXTS)}")
 
-    doc_id = document_id or f"doc_{uuid.uuid4().hex[:8]}"
-    saved_filename = f"{doc_id}_{file.filename}"
+    if document_id:
+        doc_id = validate_doc_id(document_id)
+    else:
+        doc_id = f"doc_{uuid.uuid4().hex[:8]}"
+
+    safe_filename = SecurityService.sanitize_filename(file.filename)
+    saved_filename = f"{doc_id}_{safe_filename}"
     saved_path = UPLOADS_DIR / saved_filename
 
     # Save uploaded file
@@ -141,13 +154,19 @@ async def upload_document(
             final_pdf_path.unlink()
         raise HTTPException(status_code=400, detail=f"File Security Rejection: {safety_reason}")
 
+    # Phase 41: PDF Sanitization & Scrubbing (strip JS/dangerous annotations)
+    try:
+        SecurityService.sanitize_pdf(str(final_pdf_path))
+    except Exception as scrub_err:
+        print(f"[Security] PDF sanitization warning: {scrub_err}")
+
     # Register document record in database with current_user as owner
     doc_record = db.query(Document).filter(Document.id == doc_id).first()
     if not doc_record:
         doc_record = Document(
             id=doc_id,
             user_id=current_user.id,
-            filename=file.filename,
+            filename=safe_filename,
             file_path=str(final_pdf_path),
             file_size_bytes=meta.get("file_size_bytes", 0),
             page_count=meta.get("page_count", 0),
@@ -173,7 +192,7 @@ async def upload_document(
         user=current_user,
         resource_type="DOCUMENT",
         resource_id=doc_id,
-        details={"filename": file.filename, "size_bytes": meta.get("file_size_bytes"), "pages": meta.get("page_count")},
+        details={"filename": safe_filename, "size_bytes": meta.get("file_size_bytes"), "pages": meta.get("page_count")},
         ip_address=client_ip,
         status="SUCCESS"
     )
@@ -231,6 +250,7 @@ def get_document_status(
     """
     Check document ingestion status, progress percentage, and checklist checkpoints.
     """
+    document_id = validate_doc_id(document_id)
     live_status = job_manager.get_status(document_id)
     if live_status:
         stages = live_status.get("stages", {})
@@ -289,6 +309,7 @@ def get_document_routes(
     - Charts (Qwen3-VL multimodal)
     - Irrelevant (Skipped)
     """
+    document_id = validate_doc_id(document_id)
     doc = db.query(Document).filter(Document.id == document_id).first()
     cache_manager = DocumentCacheManager(document_id=document_id, base_cache_dir=CACHE_DIR)
     
@@ -348,6 +369,7 @@ def get_document_metrics(
     """
     Retrieve deterministic Python-calculated financial ratios (YoY growth, Net margin, D/E, Current ratio, FCF).
     """
+    document_id = validate_doc_id(document_id)
     metrics = db.query(FinancialMetric).filter(FinancialMetric.document_id == document_id).all()
     
     if not metrics:
@@ -403,6 +425,7 @@ def verify_financial_metric(
     """
     Sign-off or verify a financial metric. Requires VERIFY permission or REVIEWER role.
     """
+    document_id = validate_doc_id(document_id)
     metric = db.query(FinancialMetric).filter(
         FinancialMetric.id == metric_id,
         FinancialMetric.document_id == document_id
@@ -455,6 +478,7 @@ def get_document_anomalies(
     """
     Retrieve accounting stress and anomaly alerts.
     """
+    document_id = validate_doc_id(document_id)
     anomalies = db.query(AnomalyRecord).filter(AnomalyRecord.document_id == document_id).all()
 
     if not anomalies:
@@ -499,6 +523,7 @@ def query_document(
     """
     Query the document via local FAISS RAG. Requires ANALYZE permissions.
     """
+    document_id = validate_doc_id(document_id)
     try:
         # Fetch verified deterministic financial metrics for this document
         metrics_db = db.query(FinancialMetric).filter(FinancialMetric.document_id == document_id).all()
@@ -657,6 +682,7 @@ def get_permissions(
     """
     Retrieve access control list for document.
     """
+    document_id = validate_doc_id(document_id)
     doc = db.query(Document).filter(Document.id == document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document '{document_id}' not found.")
@@ -692,6 +718,7 @@ def update_permission(
     """
     Grant or update document permissions. Requires OWNER permission or ADMIN role.
     """
+    document_id = validate_doc_id(document_id)
     target_user = None
     if payload.target_user_id:
         target_user = db.query(User).filter(User.id == payload.target_user_id).first()
@@ -728,6 +755,7 @@ def delete_document(
     Securely delete document from disk, vector store, cache, and database.
     Requires OWNER permission or ADMIN role.
     """
+    document_id = validate_doc_id(document_id)
     doc = db.query(Document).filter(Document.id == document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document '{document_id}' not found.")

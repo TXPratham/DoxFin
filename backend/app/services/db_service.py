@@ -60,14 +60,16 @@ class DatabaseSyncService:
         # Clear prior metrics for clean state
         db.query(FinancialMetric).filter(FinancialMetric.document_id == doc_id).delete()
 
+        currency_unit = metrics.get("currency_unit") or metrics.get("_currency_unit") or "Cr"
+
         metric_definitions = [
-            ("Consolidated Revenue", metrics.get("consolidated_revenue"), "Cr"),
-            ("Reported PAT", metrics.get("net_profit"), "Cr"),
+            ("Consolidated Revenue", metrics.get("consolidated_revenue"), currency_unit),
+            ("Reported PAT", metrics.get("net_profit"), currency_unit),
             ("YoY Revenue Growth", metrics.get("revenue_growth_yoy"), "%"),
             ("Operating Margin", metrics.get("net_profit_margin"), "%"),
             ("Debt-to-Equity Ratio", metrics.get("debt_to_equity"), "ratio"),
             ("Current Ratio", metrics.get("current_ratio"), "ratio"),
-            ("Free Cash Flow", metrics.get("free_cash_flow"), "Cr"),
+            ("Free Cash Flow", metrics.get("free_cash_flow"), currency_unit),
         ]
 
         for name, val, unit in metric_definitions:

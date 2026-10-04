@@ -268,28 +268,59 @@ class SecurityService:
                     except Exception:
                         pass
 
-        return deleted_items
+    @staticmethod
+    def validate_document_id(document_id: str) -> str:
+        """
+        Validates document_id against strict alphanumeric regex to prevent
+        directory traversal (e.g., ../, ..\\) or command injection attacks.
+        """
+        if not document_id or not isinstance(document_id, str):
+            raise ValueError("Document ID is required.")
+        doc_id = document_id.strip()
+        if len(doc_id) > 64:
+            raise ValueError("Document ID exceeds maximum allowed length of 64 characters.")
+        if not re.match(r"^[a-zA-Z0-9_\-]+$", doc_id):
+            raise ValueError("Invalid Document ID format. Only alphanumeric characters, dashes, and underscores are allowed.")
+        return doc_id
+
+    @staticmethod
+    def sanitize_filename(filename: str) -> str:
+        """
+        Sanitizes uploaded filename by stripping path components and dangerous characters.
+        """
+        if not filename:
+            return "unnamed_document.pdf"
+        # Extract base name to defeat directory traversal
+        base_name = Path(filename).name
+        # Keep alphanumeric, dots, dashes, underscores, and spaces
+        clean_name = re.sub(r"[^\w\-. ]", "_", base_name).strip()
+        return clean_name or "document.pdf"
+
+    # Alias for sanitize_untrusted_pdf
+    sanitize_pdf = sanitize_untrusted_pdf
 
 
 class RateLimiter:
     """
-    In-memory sliding-window rate limiter for LAN endpoints.
+    In-memory sliding-window rate limiter for API endpoints.
     """
-    def __init__(self, max_requests: int = RATE_LIMIT_REQUESTS_PER_MINUTE, window_sec: int = 60):
+    def __init__(self, max_requests: int = RATE_LIMIT_REQUESTS_PER_MINUTE, window_sec: int = 60, window_seconds: Optional[int] = None):
         self.max_requests = max_requests
-        self.window_sec = window_sec
+        self.window_sec = window_seconds if window_seconds is not None else window_sec
         self.requests: Dict[str, List[float]] = {}
 
-    def is_allowed(self, client_id: str) -> bool:
+    def is_allowed(self, client_id: str) -> Tuple[bool, str]:
         now = time.time()
         timestamps = self.requests.get(client_id, [])
         valid_timestamps = [t for t in timestamps if now - t < self.window_sec]
         if len(valid_timestamps) >= self.max_requests:
             self.requests[client_id] = valid_timestamps
-            return False
+            return False, f"Rate limit exceeded ({self.max_requests} requests per {self.window_sec}s)."
         valid_timestamps.append(now)
         self.requests[client_id] = valid_timestamps
-        return True
+        return True, "Allowed"
 
 
+# Attach to SecurityService for convenient access
+SecurityService.RateLimiter = RateLimiter
 rate_limiter = RateLimiter()
