@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Optional, Union, Callable
 from app.services.pymupdf_service import inspect_pdf
 from app.services.pdf_inspector import inspect_pdf as fast_inspect_pdf
 from app.services.classifier_service import classify_page
+# Timed stage & router
 from app.services.page_router import (
     route_document,
     create_selected_pages_pdf,
@@ -14,8 +15,6 @@ from app.services.page_router import (
     timed_stage,
     merge_selective_results
 )
-from app.services.docling_service import process_with_docling
-from app.services.vision_service import VisionService, is_candidate_financial_chart
 from app.services.chunking_service import create_document_chunks
 from app.services.embedding_service import create_embeddings
 from app.services.faiss_service import FaissStore, save_document_store, load_document_store
@@ -265,6 +264,21 @@ class DoxFin500PagePipeline:
         cache.update_stage_status("text_extraction", "COMPLETED", progress_percent=45, current_stage=f"{len(text_pages_data)} ordinary text pages fast-tracked")
         _notify("text_extraction", 45, "Text pass-through", "COMPLETED")
 
+        # Fast Early Indexing (instant vector search while tables are processed)
+        early_index_file = self.vector_store_dir / f"{document_id}.index"
+        if not early_index_file.exists():
+            try:
+                early_chunks = create_document_chunks(classified_pages, document_id=document_id)
+                if early_chunks:
+                    e_texts = [c["text"] for c in early_chunks]
+                    e_embs = create_embeddings(e_texts)
+                    e_dim = e_embs.shape[1] if hasattr(e_embs, "shape") else len(e_embs[0])
+                    e_store = FaissStore(dimension=e_dim)
+                    e_store.add(embeddings=e_embs, metadata=early_chunks)
+                    save_document_store(e_store, doc_id=document_id, vector_store_dir=self.vector_store_dir)
+            except Exception as e_err:
+                print(f"[EarlyIndex] Warning building early index: {e_err}")
+
         # STAGE 5: Table Extraction Branch (Docling on Selected Pages)
         _notify("table_extraction", 50, "Extracting targeted tables...", "IN_PROGRESS")
         if force_recompute:
@@ -289,6 +303,7 @@ class DoxFin500PagePipeline:
             p_num = tp.get("page", tp.get("page_number", 1))
             if p_num in completed_table_pages:
                 continue  # Phase 29: Skip already processed pages on resumption
+            from app.services.docling_service import process_with_docling
             res = process_with_docling(str(pdf_file), page_range=(p_num, p_num), needs_ocr=tp.get("use_ocr", False))
             page_table_entry = {
                 "page_number": p_num,
@@ -330,6 +345,7 @@ class DoxFin500PagePipeline:
             except Exception:
                 pass
 
+            from app.services.vision_service import VisionService
             c_res = VisionService.process_page_images(cp, image_path=chart_img_path)
             if c_res:
                 c_res["source"] = "qwen3_vl_selective"
@@ -403,7 +419,13 @@ class DoxFin500PagePipeline:
 
         # STAGE 9: Chunks & Extracted Text
         chunks = None if force_recompute else cache.load_stage_data("extracted_text")
-        if chunks is None:
+        if chunks is None or force_recompute or tables_data:
+            # Augment pages with extracted markdown tables so structured tables are converted to chunks
+            table_map = {t.get("page_number"): t.get("markdown", "") for t in (tables_data or [])}
+            for p in classified_pages:
+                p_num = p.get("page_number", p.get("page", 1))
+                if p_num in table_map:
+                    p["markdown"] = table_map[p_num]
             chunks = create_document_chunks(classified_pages, document_id=document_id)
             cache.save_stage_data("extracted_text", chunks)
 
@@ -412,7 +434,9 @@ class DoxFin500PagePipeline:
         index_file = self.vector_store_dir / f"{document_id}.index"
         meta_file = self.vector_store_dir / f"{document_id}_metadata.json"
 
-        if not index_file.exists() or force_recompute:
+        # Index if file missing, force recompute, or if new table chunks were extracted
+        needs_indexing = not index_file.exists() or force_recompute or (tables_data and len(tables_data) > 0)
+        if needs_indexing:
             try:
                 if chunks:
                     texts = [c["text"] for c in chunks]

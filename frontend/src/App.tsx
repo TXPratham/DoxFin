@@ -860,17 +860,22 @@ export default function App() {
     setActiveDocId(doc.id);
     setActiveFilename(doc.filename);
     setPageCount(doc.page_count);
-    setDocStatus('completed');
-    setProgressPercent(100);
-    setCurrentStageLabel('Completed');
-    setEstimatedRemainingSec(0);
+    const isCompleted = doc.status === 'completed';
+    const isProcessing = doc.status === 'processing';
+    setDocStatus(doc.status || 'completed');
+    setProgressPercent(isCompleted ? 100 : isProcessing ? 50 : 0);
+    setCurrentStageLabel(isCompleted ? 'Completed' : isProcessing ? 'Processing in background...' : 'Pending');
+    setEstimatedRemainingSec(isCompleted ? 0 : 30);
     setMetrics([]);
     setAnomalies([]);
     setCitations([]);
     setAnswer(`Evidence extracted from ${doc.filename}. You can ask quantitative questions below.`);
     fetchDocumentAnalytics(doc.id);
+    if (isProcessing) {
+      startLivePolling(doc.id, undefined, doc.page_count);
+    }
     setCurrentView('WORKSPACE');
-    setActiveSidebarTab('Processing');
+    setActiveSidebarTab(isCompleted ? 'Analysis' : 'Processing');
   };
 
   const formatMetricDisplay = (val: number, unit: string) => {
@@ -2072,6 +2077,16 @@ export default function App() {
                               </div>
                             </div>
                           ))}
+                      </div>
+                    ) : docStatus === 'processing' ? (
+                      <div style={{ background: '#f8fafc', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '2.5rem 1.5rem', textAlign: 'center' }}>
+                        <Loader2 size={36} className="spin-animate" color="#2563eb" style={{ margin: '0 auto 0.75rem auto', display: 'block' }} />
+                        <div style={{ fontWeight: 700, fontSize: '0.98rem', color: '#1e3a8a', marginBottom: '0.4rem' }}>
+                          Extracting and Computing Financial Schedules...
+                        </div>
+                        <p style={{ fontSize: '0.84rem', color: '#64748b', maxWidth: '580px', margin: '0 auto', lineHeight: 1.5 }}>
+                          The document is currently being ingested by the selective processing pipeline ({currentStageLabel || 'Processing tables and ratios'}). Financial metrics and forensic invariants will appear automatically upon completion.
+                        </p>
                       </div>
                     ) : (
                       <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '2.5rem 1.5rem', textAlign: 'center' }}>

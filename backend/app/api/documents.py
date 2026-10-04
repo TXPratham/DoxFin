@@ -559,6 +559,90 @@ def query_document(
             retrieved_chunks_count=len(citations)
         )
     except FileNotFoundError:
+        # Check if cache exists to recover/build the index automatically
+        index_file = VECTOR_STORE_DIR / f"{document_id}.index"
+        cache_pages_file = CACHE_DIR / document_id / "pages.json"
+        cache_text_file = CACHE_DIR / document_id / "text.json"
+        cache_tables_file = CACHE_DIR / document_id / "tables.json"
+
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        job = db.query(ProcessingJob).filter(ProcessingJob.document_id == document_id).order_by(ProcessingJob.id.desc()).first()
+
+        if (cache_pages_file.exists() or cache_text_file.exists()) and not index_file.exists():
+            try:
+                import json
+                from app.services.chunking_service import create_document_chunks
+                from app.services.embedding_service import create_embeddings
+                from app.services.faiss_service import FaissStore, save_document_store
+
+                pages = []
+                if cache_pages_file.exists():
+                    with open(cache_pages_file, "r", encoding="utf-8") as pf:
+                        pages = json.load(pf)
+                elif cache_text_file.exists():
+                    with open(cache_text_file, "r", encoding="utf-8") as tf:
+                        pages = json.load(tf)
+
+                tables = []
+                if cache_tables_file.exists():
+                    with open(cache_tables_file, "r", encoding="utf-8") as tbf:
+                        tables = json.load(tbf)
+
+                table_by_page = {t.get("page_number"): t.get("markdown", "") for t in tables}
+                for p in pages:
+                    p_num = p.get("page_number", p.get("page", 1))
+                    if p_num in table_by_page:
+                        p["markdown"] = table_by_page[p_num]
+
+                chunks = create_document_chunks(pages, document_id=document_id)
+                if chunks:
+                    texts = [c["text"] for c in chunks]
+                    embeddings = create_embeddings(texts)
+                    dim = embeddings.shape[1] if hasattr(embeddings, "shape") else len(embeddings[0])
+                    store = FaissStore(dimension=dim)
+                    store.add(embeddings=embeddings, metadata=chunks)
+                    save_document_store(store, doc_id=document_id, vector_store_dir=VECTOR_STORE_DIR)
+
+                    rag_res = RAGService.query_by_doc_id(
+                        query=payload.query,
+                        doc_id=document_id,
+                        vector_store_dir=str(VECTOR_STORE_DIR),
+                        top_k=payload.top_k,
+                        verified_metrics=verified_metrics
+                    )
+                    citations = [
+                        RAGCitation(
+                            page_number=c["page_number"],
+                            section=c["section"],
+                            chunk_id=c.get("chunk_id"),
+                            score=c["score"],
+                            text_snippet=c["text_snippet"],
+                            source_type=c.get("source_type", "general_text"),
+                            text=c.get("text", c["text_snippet"])
+                        )
+                        for c in rag_res.get("citations", [])
+                    ]
+                    return DocumentQueryResponse(
+                        query=payload.query,
+                        document_id=document_id,
+                        answer=rag_res.get("answer", ""),
+                        citations=citations,
+                        retrieved_chunks_count=len(citations)
+                    )
+            except Exception as build_err:
+                print(f"[AutoIndex] Failed to build on-demand index: {build_err}")
+
+        # If document is still processing in background
+        if doc and doc.status == "processing":
+            stage_info = job.stage if (job and hasattr(job, 'stage') and job.stage) else "Extracting schedules"
+            return DocumentQueryResponse(
+                query=payload.query,
+                document_id=document_id,
+                answer=f"Document '{doc.filename}' is currently being ingested by the processing engine (Stage: {stage_info}). The AI retrieval index will be available as soon as initial parsing completes.",
+                citations=[],
+                retrieved_chunks_count=0
+            )
+
         raise HTTPException(status_code=404, detail=f"Document index for '{document_id}' not found.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"RAG query execution failed: {str(e)}")
