@@ -29,12 +29,14 @@
   - [Method A: Local Dual-Terminal Run (Recommended for Dev)](#method-a-local-dual-terminal-run-recommended-for-dev)
   - [Method B: Automated One-Command Installer](#method-b-automated-one-command-installer)
   - [Method C: Docker & Docker Compose (Production On-Premise)](#method-c-docker--docker-compose-production-on-premise)
+  - [Method D: Live Public URL & Tunnel Deployment](#method-d-live-public-url--tunnel-deployment)
 - [Demo Credentials & Role-Based Access Control](#demo-credentials--role-based-access-control)
 - [Key Workflows & Feature Guide](#key-workflows--feature-guide)
   - [PyMuPDF Fast Pass & Selective Page Router](#pymupdf-fast-pass--selective-page-router)
   - [Conversational Neural Chat ("Ask DoxFin")](#conversational-neural-chat-ask-doxfin)
   - [Deterministic Financial Ratio Engine](#deterministic-financial-ratio-engine)
   - [Forensic Anomaly Detection](#forensic-anomaly-detection)
+  - [Enterprise Security & Hardening (Phase 41)](#enterprise-security--hardening-phase-41)
   - [SOC2 Type II Audit Ledger](#soc2-type-ii-audit-ledger)
 - [Verification & Automated Test Suite](#verification--automated-test-suite)
 - [Environment Configuration & Variables](#environment-configuration--variables)
@@ -275,6 +277,28 @@ docker-compose logs -f doxfin-backend
 
 ---
 
+### Method D: Live Public URL & Tunnel Deployment
+
+DoxFin includes built-in scripts to expose your local frontend and backend to the web with one click:
+
+#### 1. Start a New Tunnel & Copy URL to Clipboard:
+```powershell
+.\start-tunnel.ps1
+```
+*Automatically launches Cloudflare Tunnel to `http://localhost:3000`, extracts the live HTTPS URL, prints it in yellow, and copies it directly to your clipboard.*
+
+#### 2. Check the Currently Active URL:
+If the tunnel is already running in the background and you need the link again:
+```powershell
+.\check-tunnel-url.ps1
+```
+
+#### 3. Permanent Fixed URLs (Never Changes):
+For permanent, persistent domains without random URLs (via Localtunnel, Ngrok, or Cloudflare Custom Domains), refer to the dedicated guide:  
+📖 **[LIVE_URL_AND_DEPLOYMENT.md](file:///c:/vscode%20projects/DoxFin/LIVE_URL_AND_DEPLOYMENT.md)**
+
+---
+
 ## Demo Credentials & Role-Based Access Control
 
 DoxFin automatically seeds demo enterprise user accounts on the first database initialization:
@@ -319,6 +343,13 @@ DoxFin automatically seeds demo enterprise user accounts on the first database i
   - **Operating Cash Flow Lag:** Detects EBITDA vs. OCF disconnects.
   - **Goodwill Impairment & Debt-to-Equity Strains.**
 
+### Enterprise Security & Hardening (Phase 41)
+- **HTTP Security Headers:** Injects `nosniff`, `SAMEORIGIN`, `1; mode=block`, `HSTS`, `Referrer-Policy`, and `Permissions-Policy` across all endpoints.
+- **Path Traversal Shield:** Enforces strict regex validation (`^[a-zA-Z0-9_\-]+$`) on all document IDs and sanitizes uploaded filenames.
+- **PDF Decontamination:** PyMuPDF scrubs malicious JavaScript, launch actions, and embedded attachments before indexing.
+- **Adversarial Prompt Injection Defense:** RAG pipeline filters jailbreak attempts (`DAN`, `reveal system prompt`, SQL injection patterns) and returns a `SECURITY_VIOLATION` response.
+- **Sliding-Window Rate Limiting:** Enforces 120 req/min per IP to prevent scraping and abuse.
+
 ### SOC2 Type II Audit Ledger
 - Switch to the **Audit** tab.
 - Every document ingestion, user query, ratio verification, and authentication event is cryptographically recorded in an immutable ledger with timestamps, user identities, client IP addresses, and hash fingerprints.
@@ -353,6 +384,12 @@ cd frontend
 npm run build
 ```
 *Validates TypeScript types and generates production bundles (`tsc && vite build`).*
+
+### 5. Test Enterprise Security Suite
+```powershell
+python -m unittest backend/tests/test_enterprise_security.py
+```
+*Verifies security headers, path traversal rejection, prompt injection filters, magic byte verification, and sliding-window rate limiting.*
 
 ---
 
