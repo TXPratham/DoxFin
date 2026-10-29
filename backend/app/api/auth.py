@@ -14,7 +14,7 @@ from app.database.database import get_db
 from app.database.models import User, UserRole
 from app.services.security_service import SecurityService
 from app.services.auth_service import AuthService, get_current_user
-from app.services.audit_service import AuditService
+from app.services.audit_service import AuditService, extract_client_ip
 from app.schemas import (
     UserLoginRequest,
     UserRegisterRequest,
@@ -31,7 +31,7 @@ def login(payload: UserLoginRequest, request: Request, db: Session = Depends(get
     Authenticate employee credentials and return JWT bearer token.
     """
     user = AuthService.authenticate_user(db, payload.email, payload.password)
-    client_ip = request.client.host if request.client else "127.0.0.1"
+    client_ip = extract_client_ip(request)
 
     if not user:
         AuditService.log_event(

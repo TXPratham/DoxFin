@@ -177,10 +177,19 @@ class AnomalyDetector:
     @staticmethod
     def evaluate_financial_health(metrics: Dict[str, Any]) -> List[Dict[str, Any]]:
         anomalies = []
+        if not metrics:
+            return anomalies
 
-        # 1. Working Capital Strain: Net Profit > 0 but Free Cash Flow < 0
         net_profit = metrics.get("net_profit")
         fcf = metrics.get("free_cash_flow")
+        cfo = metrics.get("cfo")
+        c_ratio = metrics.get("current_ratio")
+        de_ratio = metrics.get("debt_to_equity")
+        margin = metrics.get("net_profit_margin")
+        rev_growth = metrics.get("revenue_growth_yoy")
+        revenue = metrics.get("consolidated_revenue") or metrics.get("revenue_current")
+
+        # 1. Working Capital Strain: Net Profit > 0 but Free Cash Flow < 0
         if net_profit is not None and fcf is not None:
             if net_profit > 0 and fcf < 0:
                 anomalies.append({
@@ -191,23 +200,72 @@ class AnomalyDetector:
                 })
 
         # 2. Liquidity Strain: Current Ratio < 1.0
-        c_ratio = metrics.get("current_ratio")
-        if c_ratio is not None and c_ratio < 1.0:
-            anomalies.append({
-                "type": "LIQUIDITY_WARNING",
-                "severity": "MEDIUM",
-                "message": f"Current ratio is {c_ratio:.2f} (< 1.0), indicating short-term obligations exceed current assets.",
-                "action_required": "Verify cash equivalents and short-term borrowing notes."
-            })
+        if c_ratio is not None:
+            if c_ratio < 0.8:
+                anomalies.append({
+                    "type": "SEVERE_LIQUIDITY_DEFICIT",
+                    "severity": "HIGH",
+                    "message": f"Severe liquidity constraint: Current ratio is {c_ratio:.2f} (< 0.80), short-term liquid assets fall well short of obligations.",
+                    "action_required": "Examine working capital lines and debt refinancing covenants."
+                })
+            elif c_ratio < 1.0:
+                anomalies.append({
+                    "type": "LIQUIDITY_WARNING",
+                    "severity": "MEDIUM",
+                    "message": f"Current ratio is {c_ratio:.2f} (< 1.00), indicating short-term obligations exceed current assets.",
+                    "action_required": "Verify cash equivalents and short-term borrowing notes."
+                })
 
         # 3. High Leverage: Debt to Equity > 2.0
-        de_ratio = metrics.get("debt_to_equity")
-        if de_ratio is not None and de_ratio > 2.0:
+        if de_ratio is not None:
+            if de_ratio > 3.0:
+                anomalies.append({
+                    "type": "CRITICAL_GEARING_LEVERAGE",
+                    "severity": "HIGH",
+                    "message": f"Critical capital structure gearing: Debt-to-Equity ratio stands at {de_ratio:.2f} (> 3.00x). High interest rate vulnerability.",
+                    "action_required": "Audit debt maturity schedule and interest coverage ratios."
+                })
+            elif de_ratio > 1.5:
+                anomalies.append({
+                    "type": "HIGH_LEVERAGE",
+                    "severity": "MEDIUM",
+                    "message": f"Elevated leverage: Debt-to-Equity ratio stands at {de_ratio:.2f} (> 1.50x).",
+                    "action_required": "Review long-term borrowings and senior secured notes."
+                })
+
+        # 4. Negative Operating Cash Flow
+        if cfo is not None and cfo < 0 and revenue and revenue > 0:
             anomalies.append({
-                "type": "HIGH_LEVERAGE",
+                "type": "NEGATIVE_OPERATING_CASH_FLOW",
+                "severity": "HIGH",
+                "message": f"Operating Cash Flow is negative ({cfo:,.2f}) despite generating {revenue:,.2f} in revenue.",
+                "action_required": "Check Cash Flow from Operations breakdown and working capital changes."
+            })
+
+        # 5. Net Margin Contraction / Negative Margin
+        if margin is not None:
+            if margin < 0:
+                anomalies.append({
+                    "type": "OPERATING_LOSS_DEFICIT",
+                    "severity": "HIGH",
+                    "message": f"Negative Net Profit Margin ({margin:.2f}%). Operating at a loss during the reporting period.",
+                    "action_required": "Analyze cost of goods sold, EBITDA bridges, and tax expense provisions."
+                })
+            elif margin < 4.0:
+                anomalies.append({
+                    "type": "COMPRESSED_NET_MARGIN",
+                    "severity": "MEDIUM",
+                    "message": f"Low Net Profit Margin ({margin:.2f}% < 4.0%). Vulnerable to raw material price inflation and supply chain shocks.",
+                    "action_required": "Review operational cost breakdowns in the Profit & Loss statement."
+                })
+
+        # 6. Revenue Deceleration / Contraction
+        if rev_growth is not None and rev_growth < 0:
+            anomalies.append({
+                "type": "TOP_LINE_CONTRACTION",
                 "severity": "MEDIUM",
-                "message": f"Debt-to-Equity ratio stands at {de_ratio:.2f} (> 2.0).",
-                "action_required": "Review debt maturity schedule in notes to accounts."
+                "message": f"Consolidated revenue contracted by {abs(rev_growth):.2f}% Year-over-Year.",
+                "action_required": "Verify Segmental Revenue disclosures in the notes to accounts."
             })
 
         return anomalies

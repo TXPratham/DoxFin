@@ -109,12 +109,20 @@ class DatabaseSyncService:
             db.add(job)
 
         # 5. Audit Log
-        audit = AuditLog(
+        target_user_id = user_id or doc.user_id
+        target_user = db.query(User).filter(User.id == target_user_id).first() if target_user_id else None
+        
+        AuditService.log_event(
+            db=db,
+            action="PIPELINE_PROCESSED",
+            user=target_user,
+            user_id=target_user_id,
             document_id=doc_id,
-            user_id=user_id,
-            action="pipeline_processed"
+            resource_type="DOCUMENT",
+            resource_id=doc_id,
+            details={"filename": doc.filename, "stages_completed": len(cache_stages)},
+            status="SUCCESS"
         )
-        db.add(audit)
 
         db.commit()
         db.refresh(doc)

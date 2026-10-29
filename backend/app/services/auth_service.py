@@ -208,11 +208,13 @@ class AuthService:
 def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
     x_user_email: Optional[str] = Header(None, alias="X-User-Email"),
+    x_user_name: Optional[str] = Header(None, alias="X-User-Name"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
     db: Session = Depends(get_db)
 ) -> User:
     """
     FastAPI dependency to extract and authenticate current user from Bearer JWT token,
-    or fallback to X-User-Email for LAN development/testing.
+    or fallback to X-User-Email / dynamic team member identity for LAN & Cloudflare tunnel access.
     """
     # 1. Check Bearer JWT token
     if credentials and credentials.credentials:
@@ -222,11 +224,29 @@ def get_current_user(
             if user and user.is_active:
                 return user
 
-    # 2. Check X-User-Email header for LAN/Direct access
-    if x_user_email:
-        user = AuthService.get_user_by_email(db, x_user_email)
+    # 2. Check X-User-Email header for LAN/Tunnel access
+    if x_user_email and x_user_email.strip():
+        clean_email = x_user_email.strip().lower()
+        user = AuthService.get_user_by_email(db, clean_email)
         if user and user.is_active:
             return user
+        elif not user:
+            # Auto-provision new collaborator connecting via Cloudflare Tunnel / LAN
+            name = (x_user_name or clean_email.split('@')[0]).replace('.', ' ').title()
+            valid_role = (x_user_role or "ANALYST").upper()
+            if valid_role not in [r.value for r in UserRole]:
+                valid_role = UserRole.ANALYST.value
+            new_user = User(
+                email=clean_email,
+                full_name=name,
+                hashed_password=SecurityService.hash_password("collaborator123"),
+                role=valid_role,
+                is_active=True
+            )
+            db.add(new_user)
+            db.commit()
+            db.refresh(new_user)
+            return new_user
 
     # 3. Default fallback to Admin (Pratham) for transparent backward compatibility in test suites
     default_admin = db.query(User).filter(User.role == UserRole.ADMIN.value).first()

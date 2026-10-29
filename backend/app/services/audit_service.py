@@ -17,6 +17,21 @@ from sqlalchemy import or_
 from app.database.models import AuditLog, User
 
 
+def extract_client_ip(request: Any) -> str:
+    """Extracts client IP address supporting Cloudflare Tunnel (CF-Connecting-IP) and reverse proxies."""
+    if not request:
+        return "127.0.0.1"
+    headers = getattr(request, "headers", {})
+    cf_ip = headers.get("cf-connecting-ip")
+    if cf_ip:
+        return cf_ip
+    x_forwarded = headers.get("x-forwarded-for")
+    if x_forwarded:
+        return x_forwarded.split(",")[0].strip()
+    client = getattr(request, "client", None)
+    return client.host if client else "127.0.0.1"
+
+
 class AuditService:
     """Central audit logger and query engine for financial compliance."""
 

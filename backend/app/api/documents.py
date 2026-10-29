@@ -27,7 +27,7 @@ from app.services.cache_service import DocumentCacheManager
 from app.services.rag_service import RAGService
 from app.services.db_service import DatabaseSyncService
 from app.services.security_service import SecurityService
-from app.services.audit_service import AuditService
+from app.services.audit_service import AuditService, extract_client_ip
 from app.services.auth_service import AuthService, get_current_user, require_permission
 from app.workers.job_manager import job_manager
 from app.schemas import (
@@ -185,7 +185,7 @@ async def upload_document(
         db.commit()
 
     # Log UPLOAD audit event
-    client_ip = request.client.host if request.client else "127.0.0.1"
+    client_ip = extract_client_ip(request)
     AuditService.log_event(
         db=db,
         action="UPLOAD",
@@ -446,7 +446,7 @@ def verify_financial_metric(
     metric.verified_at = datetime.utcnow()
     db.commit()
 
-    client_ip = request.client.host if request.client else "127.0.0.1"
+    client_ip = extract_client_ip(request)
     AuditService.log_event(
         db=db,
         action="VERIFY",
@@ -476,7 +476,7 @@ def get_document_anomalies(
     current_user: User = Depends(require_permission("READ"))
 ):
     """
-    Retrieve accounting stress and anomaly alerts.
+    Retrieve accounting stress and anomaly alerts with dynamic fallback evaluation.
     """
     document_id = validate_doc_id(document_id)
     anomalies = db.query(AnomalyRecord).filter(AnomalyRecord.document_id == document_id).all()
@@ -493,6 +493,39 @@ def get_document_anomalies(
             )
             for a in cached_anomalies
         ]
+        
+        # If still empty, check if metrics are stored in DB to dynamically evaluate
+        if not items:
+            db_metrics = db.query(FinancialMetric).filter(FinancialMetric.document_id == document_id).all()
+            if db_metrics:
+                m_map = {}
+                for m in db_metrics:
+                    name = m.metric_name.lower()
+                    if "growth" in name:
+                        m_map["revenue_growth_yoy"] = m.value
+                    elif "margin" in name:
+                        m_map["net_profit_margin"] = m.value
+                    elif "debt" in name:
+                        m_map["debt_to_equity"] = m.value
+                    elif "current ratio" in name:
+                        m_map["current_ratio"] = m.value
+                    elif "free cash" in name:
+                        m_map["free_cash_flow"] = m.value
+                    elif "revenue" in name:
+                        m_map["consolidated_revenue"] = m.value
+                    elif "profit" in name:
+                        m_map["net_profit"] = m.value
+                computed = AnomalyDetector.evaluate_financial_health(m_map)
+                items = [
+                    AnomalyItem(
+                        anomaly_type=a.get("type", "UNKNOWN"),
+                        severity=a.get("severity", "MEDIUM"),
+                        message=a.get("message", ""),
+                        action_required=a.get("action_required")
+                    )
+                    for a in computed
+                ]
+
         return DocumentAnomaliesResponse(document_id=document_id, anomalies=items, count=len(items))
 
     items = [
@@ -564,7 +597,7 @@ def query_document(
         )
 
         # Compliance Audit Log
-        client_ip = request.client.host if request.client else "127.0.0.1"
+        client_ip = extract_client_ip(request)
         AuditService.log_event(
             db=db,
             action="QUERY",
@@ -776,7 +809,7 @@ def delete_document(
     db.commit()
 
     # 3. Log audit event
-    client_ip = request.client.host if request.client else "127.0.0.1"
+    client_ip = extract_client_ip(request)
     AuditService.log_event(
         db=db,
         action="DELETE",
